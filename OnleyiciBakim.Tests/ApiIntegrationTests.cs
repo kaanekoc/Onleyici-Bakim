@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using OnleyiciBakim.Integrations.Ml;
 using OnleyiciBakim.Integrations.Erp;
 using OnleyiciBakim.Data;
+using OnleyiciBakim.Domain.Enums;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Xunit;
@@ -46,7 +47,7 @@ public sealed class ApiIntegrationTests
     }
 
     [Fact]
-    public async Task MlTimeout_WithFailClosed_ReturnsServiceUnavailable()
+    public async Task MlTimeout_FallsBackToRuleScoreWithoutCrashing()
     {
         await using var factory = new TestApplicationFactory("Test");
         await using (var scope = factory.Services.CreateAsyncScope())
@@ -57,7 +58,42 @@ public sealed class ApiIntegrationTests
         var response = await client.PostAsJsonAsync(
             "/api/v1/risk-analyses/machines/DEV-MKN-001",
             new { mockScenario = "timeout" });
-        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.True(document.RootElement.GetProperty("isFallback").GetBoolean());
+        Assert.Equal(0m, document.RootElement.GetProperty("machineLearningWeight").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Recalculation_UpdatesSingleActivePlanInsteadOfCreatingDuplicate()
+    {
+        await using var factory = new TestApplicationFactory("Test");
+        await SeedAsync(factory);
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/risk-analyses/machines/DEV-MKN-003",
+            new { mockScenario = "success" });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var activePlans = await db.MaintenancePlans.CountAsync(x =>
+            x.MachineId == "DEV-MKN-003" &&
+            x.Status != MaintenancePlanStatus.Completed &&
+            x.Status != MaintenancePlanStatus.Cancelled);
+        var plan = await db.MaintenancePlans.SingleAsync(x => x.MachineId == "DEV-MKN-003");
+        Assert.Equal(1, activePlans);
+        Assert.NotNull(plan.RiskAssessmentId);
+        var assessment = await db.RiskAssessments.SingleAsync(x => x.Id == plan.RiskAssessmentId);
+        Assert.Equal(assessment.RiskLevel.ToString(), plan.Priority switch
+        {
+            "Düşük" => RiskLevel.Low.ToString(),
+            "Orta" => RiskLevel.Medium.ToString(),
+            "Yüksek" => RiskLevel.High.ToString(),
+            "Kritik" => RiskLevel.Critical.ToString(),
+            _ => string.Empty
+        });
     }
 
     [Fact]

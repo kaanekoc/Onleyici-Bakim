@@ -2,14 +2,14 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using OnleyiciBakim.Models.Ai;
 using OnleyiciBakim.Options;
 
 namespace OnleyiciBakim.Integrations.Ml;
 
 public sealed record MlPredictionRequest(
     string MachineId,
-    DateTimeOffset AnalysisTimeUtc,
-    IReadOnlyDictionary<string, object?> Features,
+    MachineFeatureDto Features,
     string? Scenario = null);
 
 public sealed record MlPredictionResult(
@@ -23,7 +23,12 @@ public sealed record MlPredictionResult(
     IReadOnlyList<string> Warnings,
     string Status,
     string? ErrorCode = null,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null,
+    decimal? FailureProbability = null,
+    decimal? DataCompletenessRate = null,
+    IReadOnlyList<string>? MissingFields = null,
+    IReadOnlyList<string>? RecommendedActions = null,
+    IReadOnlyList<string>? RuleBasedExplanation = null);
 
 public interface IMlPredictionClient
 {
@@ -49,7 +54,11 @@ public sealed class HttpMlPredictionClient(
             {
                 using var message = new HttpRequestMessage(HttpMethod.Post, _options.PredictionEndpoint)
                 {
-                    Content = JsonContent.Create(request)
+                    Content = JsonContent.Create(new
+                    {
+                        machineId = request.MachineId,
+                        features = request.Features
+                    })
                 };
                 AddApiKey(message);
                 using var response = await httpClient.SendAsync(message, cancellationToken);
@@ -67,13 +76,32 @@ public sealed class HttpMlPredictionClient(
                     cancellationToken: cancellationToken);
                 if (payload is null)
                     return Failed("invalid-json", "ML servisi boş veya geçersiz JSON döndürdü.");
-                if (payload.RiskScore is < 0m or > 100m)
+                if (!payload.AiRiskScore.HasValue || payload.AiRiskScore is < 0m or > 100m)
                     return Failed("invalid-score", "ML risk puanı 0-100 aralığında değil.");
+                if (!payload.DataCompletenessRate.HasValue ||
+                    payload.DataCompletenessRate is < 0m or > 100m)
+                    return Failed("invalid-completeness",
+                        "ML veri tamlık oranı 0-100 aralığında değil.");
+                if (!payload.FailureProbability.HasValue ||
+                    payload.FailureProbability is < 0m or > 1m)
+                    return Failed("invalid-probability",
+                        "ML failureProbability alanı 0-1 aralığında değil.");
+                var modelConfidence = payload.ModelConfidence ?? Math.Round(
+                    Math.Max(payload.FailureProbability.Value, 1m - payload.FailureProbability.Value) * 100m,
+                    1);
+                if (modelConfidence is < 0m or > 100m)
+                    return Failed("invalid-confidence",
+                        "ML modelConfidence alanı 0-100 aralığında değil.");
 
                 return new MlPredictionResult(
-                    true, payload.RiskScore, payload.ModelName, payload.ModelVersion,
-                    payload.PredictionId, payload.PredictedAtUtc, payload.Confidence,
-                    payload.Warnings ?? [], "Success");
+                    true, payload.AiRiskScore, "RandomForest", payload.ModelVersion,
+                    null, payload.PredictionDate, modelConfidence,
+                    payload.Warnings ?? [], "Success",
+                    FailureProbability: payload.FailureProbability,
+                    DataCompletenessRate: payload.DataCompletenessRate,
+                    MissingFields: payload.MissingFields ?? [],
+                    RecommendedActions: payload.RecommendedActions ?? [],
+                    RuleBasedExplanation: payload.RuleBasedExplanation ?? []);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
@@ -123,13 +151,17 @@ public sealed class HttpMlPredictionClient(
 
     private sealed class MlApiResponse
     {
-        public decimal RiskScore { get; init; }
-        public string? ModelName { get; init; }
+        public decimal? AiRiskScore { get; init; }
+        public decimal? FailureProbability { get; init; }
+        public decimal? ModelConfidence { get; init; }
+        public string? AiRiskLevel { get; init; }
         public string? ModelVersion { get; init; }
-        public string? PredictionId { get; init; }
-        public DateTimeOffset? PredictedAtUtc { get; init; }
-        public decimal? Confidence { get; init; }
+        public DateTimeOffset? PredictionDate { get; init; }
+        public decimal? DataCompletenessRate { get; init; }
+        public string[]? MissingFields { get; init; }
         public string[]? Warnings { get; init; }
+        public string[]? RecommendedActions { get; init; }
+        public string[]? RuleBasedExplanation { get; init; }
     }
 }
 
@@ -153,24 +185,21 @@ public sealed class MockMlPredictionClient : IMlPredictionClient
                     "invalid-score", "Simüle edilmiş geçersiz skor.");
         }
 
-        var failures = DecimalFeature(request, "failureCount30Days");
-        var maintenanceDays = DecimalFeature(request, "daysSinceLastMaintenance");
-        var downtime = DecimalFeature(request, "totalDowntimeHours30Days");
-        var anomaly = DecimalFeature(request, "sensorAnomalyScore");
+        var failures = Convert.ToDecimal(request.Features.ArizaSayisi30G ?? 0d);
+        var maintenanceDays = Convert.ToDecimal(request.Features.SonBakimdanGecenGun ?? 0d);
+        var downtime = Convert.ToDecimal((request.Features.DurusSuresi30G ?? 0d) / 60d);
+        var anomaly = Convert.ToDecimal(request.Features.AnomaliPuani7G ?? 0d);
         var score = Math.Clamp(
             failures * 8m + maintenanceDays / 3m + downtime * 1.5m + anomaly * 0.20m,
             0m,
             100m);
         return new(true, score, "MockRiskModel", "dev-1.0",
-            $"mock-{Guid.NewGuid():N}", DateTimeOffset.UtcNow, 0.86m, [], "Success");
+            $"mock-{Guid.NewGuid():N}", DateTimeOffset.UtcNow, 0.86m, [], "Success",
+            FailureProbability: score / 100m,
+            DataCompletenessRate: request.Features.DataCompletenessRate,
+            MissingFields: [], RecommendedActions: [], RuleBasedExplanation: []);
     }
 
     public Task<bool> IsReadyAsync(CancellationToken cancellationToken) => Task.FromResult(true);
 
-    private static decimal DecimalFeature(MlPredictionRequest request, string key)
-    {
-        if (!request.Features.TryGetValue(key, out var value) || value is null)
-            return 0m;
-        return Convert.ToDecimal(value, System.Globalization.CultureInfo.InvariantCulture);
-    }
 }

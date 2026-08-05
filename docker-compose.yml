@@ -10,12 +10,29 @@ services:
       ConnectionStrings__PostgreSql: Host=postgres;Port=5432;Database=onleyici_bakim;Username=postgres;Password=${POSTGRES_PASSWORD:-postgres}
       Database__Provider: PostgreSql
       Database__SeedDevelopmentData: "false"
+      Database__UseBakimYonetimiReadModel: "false"
+      MlService__BaseUrl: http://ml:5001
+      MlService__PredictionEndpoint: /api/v1/predict
+      MlService__UseMock: "false"
+      MlService__ApiKey: ${ML_API_KEY:-}
+      HybridRisk__MlFailurePolicy: AlgorithmOnlyFallback
       Integrations__ApiKey: ${INTEGRATION_API_KEY:-local-development-key}
       Cors__AllowedOrigins__0: http://localhost:3000
       Cors__AllowedOrigins__1: http://localhost:5173
     depends_on:
       postgres:
         condition: service_healthy
+      ml:
+        condition: service_healthy
+
+  ml:
+    build:
+      context: ./MlService
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5001"
+    environment:
+      ML_API_KEY: ${ML_API_KEY:-}
 
   postgres:
     image: postgres:16-alpine

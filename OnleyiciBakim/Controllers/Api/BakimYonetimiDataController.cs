@@ -17,7 +17,8 @@ namespace OnleyiciBakim.Controllers.Api;
 [Route("api/v1/bakim-yonetimi")]
 public sealed class BakimYonetimiDataController(
     BakimYonetimiDbContext dbContext,
-    IRiskClassificationService classificationService) : ControllerBase
+    IRiskClassificationService classificationService,
+    IReadModelMlConfidenceService mlConfidenceService) : ControllerBase
 {
     [HttpGet("machines")]
     public async Task<ActionResult<PagedResponse<MachineListItemResponse>>> GetMachines(
@@ -239,11 +240,28 @@ public sealed class BakimYonetimiDataController(
                 x.Oncelik,
                 x.Durum,
                 x.Gerekce,
+                MlProbability = x.Makine.GuncelRiskler
+                    .OrderByDescending(risk => risk.DegerlendirmeTarihi)
+                    .Select(risk => risk.MlOlasiligi)
+                    .FirstOrDefault(),
+                MlCalculationDate = x.Makine.GuncelRiskler
+                    .OrderByDescending(risk => risk.DegerlendirmeTarihi)
+                    .Select(risk => (DateTime?)risk.DegerlendirmeTarihi)
+                    .FirstOrDefault(),
                 Responsible = x.SorumluPersonel != null ? x.SorumluPersonel.AdSoyad : null,
                 WorkOrder = x.IsEmirleri.OrderByDescending(order => order.OlusturmaTarihi)
                     .Select(order => order.IsEmriNo).FirstOrDefault()
             })
             .ToListAsync(cancellationToken);
+
+        var liveConfidences = await mlConfidenceService.GetConfidencesAsync(
+            rows
+                .Where(x => !x.MlProbability.HasValue)
+                .Select(x => new ReadModelMlConfidenceRequest(
+                    x.MakineId,
+                    x.MlCalculationDate ?? x.PlanlananTarih))
+                .ToArray(),
+            cancellationToken);
 
         var items = rows.Select(x => new MaintenancePlanResponse(
             x.PlanId,
@@ -253,7 +271,8 @@ public sealed class BakimYonetimiDataController(
             x.BakimTuru ?? "Belirtilmemiş",
             x.Oncelik ?? "Orta",
             x.Durum ?? "Bilinmiyor",
-            null,
+            ToModelConfidence(x.MlProbability) ??
+                liveConfidences.GetValueOrDefault(x.MakineId),
             x.Gerekce,
             x.Gerekce,
             x.Responsible,
@@ -271,5 +290,17 @@ public sealed class BakimYonetimiDataController(
             classificationService.GetLabel(level),
             classificationService.GetColorName(level),
             classificationService.GetColorHex(level));
+    }
+
+    private static decimal? ToModelConfidence(decimal? failureProbability)
+    {
+        if (!failureProbability.HasValue)
+            return null;
+
+        var probabilityPercent = failureProbability.Value is >= 0m and <= 1m
+            ? failureProbability.Value * 100m
+            : failureProbability.Value;
+        probabilityPercent = Math.Clamp(probabilityPercent, 0m, 100m);
+        return Math.Round(Math.Max(probabilityPercent, 100m - probabilityPercent), 1);
     }
 }

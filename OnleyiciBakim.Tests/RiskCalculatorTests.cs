@@ -52,16 +52,16 @@ public sealed class RiskCalculatorTests
             FailureCount30Days = 10,
             TotalDowntimeHours30Days = 100,
             RepeatedFailure = true,
+            RepeatedFailureCount90Days = 10,
             Criticality = "Kritik",
-            CounterLimitOverrunPercent = 200,
-            ProductionStoppingFailureCount30Days = 10
+            AnomalyScore7Days = 10
         });
 
         Assert.Equal(100m, result.Score);
         Assert.Equal(result.Score, result.Breakdown.Total);
         Assert.Equal(100m, result.DataCompletenessPercent);
         Assert.Empty(result.MissingFactors);
-        Assert.Equal(7, result.Factors.Count);
+        Assert.Equal(6, result.Factors.Count);
     }
 
     [Fact]
@@ -77,6 +77,6 @@ public sealed class RiskCalculatorTests
 
         Assert.Equal(35m, result.Score);
         Assert.Equal(35m, result.DataCompletenessPercent);
-        Assert.Equal(5, result.MissingFactors.Count);
+        Assert.Equal(4, result.MissingFactors.Count);
     }
 }

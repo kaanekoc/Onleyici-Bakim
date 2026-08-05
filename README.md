@@ -10,6 +10,7 @@ ERP ve ML tahmin servisi adaptörleri ile MVC frontend aynı çözüm içindedir
   test paneli.
 - `Frontend`: backend API'sini kullanan MVC frontend.
 - `OnleyiciBakim.Tests`: unit ve API integration testleri.
+- `MlService`: Python 3.11, Random Forest tabanlı bağımsız AI risk servisi ve eğitim/test araçları.
 
 Detaylı backend teslim dokümanı: [BACKEND_README.md](BACKEND_README.md)  
 Frontend sözleşmesi: [FRONTEND_INTEGRATION_GUIDE.md](FRONTEND_INTEGRATION_GUIDE.md)  
@@ -24,8 +25,8 @@ HTTP örnekleri: [OnleyiciBakim.http](OnleyiciBakim.http)
 ```
 
 Betik mevcut bir `BakimYonetimiDb` üzerine yazmaz. Bilinçli yenileme gerekiyorsa `-Replace`
-kullanılabilir. Ardından Development profili, SQL Server ekran modelini ve Development-only mock
-ML/ERP servislerini birlikte çalıştırır:
+kullanılabilir. Ardından Development profili SQL Server ekran modelini, gerçek yerel ML HTTP
+servisini ve Development-only ERP mock'unu birlikte kullanır:
 
 ```powershell
 dotnet restore .\OnleyiciBakim.sln
@@ -33,6 +34,17 @@ dotnet build .\OnleyiciBakim.sln
 dotnet test .\OnleyiciBakim.sln
 dotnet run --project .\OnleyiciBakim\OnleyiciBakim.csproj
 ```
+
+ML servisini ayrı terminalde başlatın:
+
+```powershell
+cd .\MlService
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe .\app.py
+```
+
+ML ayrıntıları ve güncel model metrikleri: [MlService/README.md](MlService/README.md)
 
 Backend:
 
@@ -76,4 +88,12 @@ veritabanı ekibinden uygulanmalıdır.
 - `[60,80)`: Yüksek / `red`
 - `[80,100]`: Kritik / `dark-red`
 
-Hibrit skor, ara yuvarlama yapılmadan `algoritmik × 0.30 + ML × 0.70` olarak hesaplanır.
+Hibrit skor veri tamlığına göre ara yuvarlama yapılmadan hesaplanır:
+
+- Tamlık `%80+`: `AI × 0.40 + kural × 0.60`
+- Tamlık `%50–79`: `AI × 0.20 + kural × 0.80`
+- Tamlık `%50 altı` veya ML kesintisi: yalnızca kural skoru
+
+Kritik telemetri ve son 7 gündeki tekrarlayan kritik arıza skoru en az 80'e;
+geçmiş zorunlu bakım tarihi en az 60'a yükseltir. Kesin bakım tarihi AI cevabından
+değil, nihai hibrit seviyeden (`60/21/7/3` gün) backend tarafından oluşturulur.

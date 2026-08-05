@@ -111,9 +111,7 @@ public sealed class BackendMaintenanceDataService(
             MachineName = x.MachineName,
             PlannedDate = x.PlannedAt.LocalDateTime,
             Type = x.MaintenanceType,
-            Confidence = x.ModelConfidence.HasValue
-                ? (x.ModelConfidence.Value <= 1m ? x.ModelConfidence.Value * 100m : x.ModelConfidence.Value)
-                : 0m,
+            Confidence = NormalizePercentage(x.ModelConfidence),
             Status = TranslateStatus(x.Status),
             RecommendedAction = x.Recommendation ?? string.Empty
         }).ToArray();
@@ -183,6 +181,17 @@ public sealed class BackendMaintenanceDataService(
         "Planlandı" => "Planlandı",
         _ => status
     };
+
+    private static decimal? NormalizePercentage(decimal? value)
+    {
+        if (!value.HasValue)
+            return null;
+
+        var percentage = value.Value is >= 0m and <= 1m
+            ? value.Value * 100m
+            : value.Value;
+        return Math.Clamp(percentage, 0m, 100m);
+    }
 
     private async Task<IReadOnlyList<T>> GetAllPagesAsync<T>(
         string relativeUrl,

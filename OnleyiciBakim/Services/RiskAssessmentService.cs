@@ -9,7 +9,10 @@ using OnleyiciBakim.Domain.Entities;
 using OnleyiciBakim.Domain.Enums;
 using OnleyiciBakim.Infrastructure;
 using OnleyiciBakim.Integrations.Ml;
+using OnleyiciBakim.Models.Ai;
 using OnleyiciBakim.Options;
+using OnleyiciBakim.Services.Features;
+using OnleyiciBakim.Services.Risk;
 
 namespace OnleyiciBakim.Services;
 
@@ -17,6 +20,9 @@ public sealed class RiskAssessmentService(
     ApplicationDbContext dbContext,
     IAlgorithmicRiskCalculator algorithmicRiskCalculator,
     IHybridRiskCalculator hybridRiskCalculator,
+    IRuleBasedRiskService ruleBasedRiskService,
+    IHybridRiskService hybridRiskService,
+    IMachineFeatureService machineFeatureService,
     IRiskClassificationService classificationService,
     IMaintenanceRecommendationService recommendationService,
     IMlPredictionClient mlPredictionClient,
@@ -26,16 +32,46 @@ public sealed class RiskAssessmentService(
     ILogger<RiskAssessmentService> logger)
     : IRiskAssessmentService
 {
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>
+        MachineLocks = new(StringComparer.OrdinalIgnoreCase);
+
     public RiskAssessmentResponse Preview(RiskPreviewRequest request)
     {
         var calculation = algorithmicRiskCalculator.Calculate(request.AlgorithmicInput);
         var prediction = new MlPredictionResult(
             true, request.MachineLearningScore, "ManualPreview", null, null,
             DateTimeOffset.UtcNow, null, [], "Provided");
-        return CreateResponse(null, null, DateTimeOffset.UtcNow, calculation, prediction, null, false);
+        var score = hybridRiskCalculator.Calculate(calculation.Score, request.MachineLearningScore);
+        var level = classificationService.Classify(score);
+        return new RiskAssessmentResponse(
+            null, null, DateTimeOffset.UtcNow, calculation.Score, request.MachineLearningScore,
+            hybridOptions.Value.AlgorithmWeight, hybridOptions.Value.MachineLearningWeight,
+            ToPresentation(score, level), calculation.Breakdown, calculation.Reasons,
+            recommendationService.Get(level).Action, prediction.ModelName,
+            prediction.ModelVersion, prediction.Confidence, null,
+            calculation.DataCompletenessPercent, calculation.MissingFactors,
+            calculation.Factors, false, prediction.Status, [],
+            new Dictionary<string, decimal> { ["weightedScoreBeforeOverrides"] = score });
     }
 
     public async Task<RiskAssessmentResponse> EvaluateMachineAsync(
+        string machineId,
+        EvaluateMachineRiskRequest request,
+        CancellationToken cancellationToken)
+    {
+        var gate = MachineLocks.GetOrAdd(machineId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            return await EvaluateMachineCoreAsync(machineId, request, cancellationToken);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<RiskAssessmentResponse> EvaluateMachineCoreAsync(
         string machineId,
         EvaluateMachineRiskRequest request,
         CancellationToken cancellationToken)
@@ -55,44 +91,9 @@ public sealed class RiskAssessmentService(
             ?? throw new ResourceNotFoundException($"'{machineId}' kimlikli makine bulunamadı.");
 
         var evaluatedAt = DateTimeOffset.UtcNow;
-        var thirtyDaysAgo = evaluatedAt.AddDays(-30);
-        var recentFailures = await dbContext.FailureRecords
-            .AsNoTracking()
-            .Where(x => x.MachineId == machineId && x.OccurredAt >= thirtyDaysAgo &&
-                        x.OccurredAt <= evaluatedAt)
-            .Select(x => new { x.DowntimeMinutes, x.IsRecurring, x.Severity })
-            .ToListAsync(cancellationToken);
-        var telemetryStart = DateOnly.FromDateTime(evaluatedAt.AddDays(-7).UtcDateTime);
-        var telemetry = await dbContext.DailyTelemetry
-            .AsNoTracking()
-            .Where(x => x.MachineId == machineId && x.Date >= telemetryStart)
-            .GroupBy(_ => 1)
-            .Select(group => new
-            {
-                Anomaly = group.Average(x => x.AnomalyScore),
-                Production = group.Average(x => x.ProductionIntensityPercent)
-            })
-            .FirstOrDefaultAsync(cancellationToken);
-
-        var counterOverrun = machine.WorkingHours.HasValue && machine.CounterLimitHours is > 0m
-            ? Math.Max(0m, (machine.WorkingHours.Value - machine.CounterLimitHours.Value) /
-                          machine.CounterLimitHours.Value * 100m)
-            : (decimal?)null;
-        var input = new AlgorithmicRiskInput
-        {
-            DaysSinceLastMaintenance = machine.LastMaintenanceAt.HasValue
-                ? Math.Max(0, (int)(evaluatedAt - machine.LastMaintenanceAt.Value).TotalDays)
-                : null,
-            FailureCount30Days = recentFailures.Count,
-            TotalDowntimeHours30Days = recentFailures.Sum(x => x.DowntimeMinutes ?? 0) / 60m,
-            RepeatedFailure = recentFailures.Any(x => x.IsRecurring),
-            Criticality = machine.Criticality,
-            CounterLimitOverrunPercent = counterOverrun,
-            ProductionStoppingFailureCount30Days = recentFailures.Count(x => IsHighSeverity(x.Severity)),
-            AnomalyScore7Days = telemetry?.Anomaly,
-            ProductionIntensity7Days = telemetry?.Production
-        };
-        var calculation = algorithmicRiskCalculator.Calculate(input);
+        var features = await machineFeatureService.BuildFeaturesAsync(
+            machineId, evaluatedAt.UtcDateTime, cancellationToken);
+        var calculation = ruleBasedRiskService.Calculate(features);
 
         MlPredictionResult prediction;
         if (request.MachineLearningScore.HasValue)
@@ -100,29 +101,39 @@ public sealed class RiskAssessmentService(
             prediction = new MlPredictionResult(
                 true, request.MachineLearningScore, request.ModelName, request.ModelVersion,
                 request.CorrelationId, evaluatedAt, request.ModelConfidence,
-                request.MachineLearningReasons ?? [], "Provided");
+                request.MachineLearningReasons ?? [], "Provided",
+                DataCompletenessRate: features.DataCompletenessRate);
+        }
+        else if (features.DataCompletenessRate < hybridOptions.Value.MinimumCompletenessThreshold)
+        {
+            prediction = new MlPredictionResult(
+                false, null, null, null, null, null, null, [], "Skipped",
+                "INSUFFICIENT_DATA", "ML tahmini için veri tamlığı %50'nin altında.",
+                DataCompletenessRate: features.DataCompletenessRate);
         }
         else
         {
             prediction = await mlPredictionClient.PredictAsync(
-                new MlPredictionRequest(machineId, evaluatedAt, BuildFeatures(input), request.MockScenario),
+                new MlPredictionRequest(machineId, features, request.MockScenario),
                 cancellationToken);
         }
 
-        var isFallback = false;
         if (!prediction.IsSuccess)
         {
             logger.LogWarning(
                 "ML analizi başarısız. MachineId={MachineId} ErrorCode={ErrorCode} Policy={Policy}",
                 machineId, prediction.ErrorCode, hybridOptions.Value.MlFailurePolicy);
-            if (hybridOptions.Value.MlFailurePolicy == MlFailurePolicy.FailClosed)
-                throw new ExternalServiceException(
-                    $"ML analizi tamamlanamadı ({prediction.ErrorCode}); otomatik bakım kararı verilmedi.");
-            isFallback = true;
         }
 
+        var hybrid = hybridRiskService.Calculate(
+            calculation.Score,
+            prediction.IsSuccess ? prediction.RiskScore : null,
+            features,
+            evaluatedAt);
+        var isFallback = hybrid.AiWeight == 0m;
         var response = CreateResponse(
-            null, machineId, evaluatedAt, calculation, prediction, request.CorrelationId, isFallback);
+            null, machineId, evaluatedAt, calculation, prediction, request.CorrelationId,
+            isFallback, hybrid, features);
 
         IDbContextTransaction? transaction = null;
         if (dbContext.Database.IsRelational())
@@ -143,7 +154,8 @@ public sealed class RiskAssessmentService(
                 RiskReasons = string.Join("; ", response.Reasons),
                 RecommendedAction = response.RecommendedAction,
                 AlgorithmDetailsJson = JsonSerializer.Serialize(new CalculationSnapshot(
-                    response.Breakdown, response.Factors, response.MissingFactors)),
+                    response.Breakdown, response.Factors, response.MissingFactors,
+                    features, response.AppliedOverrides, response.CalculationDetails)),
                 ModelName = response.ModelName ?? integrationOptions.Value.MachineLearningModelName,
                 ModelVersion = response.ModelVersion,
                 ModelConfidence = response.ModelConfidence,
@@ -152,7 +164,8 @@ public sealed class RiskAssessmentService(
                 IsFallback = response.IsFallback,
                 MlStatus = response.MlStatus,
                 RuleSetVersion = algorithmOptions.Value.RuleSetVersion,
-                DataSource = response.IsFallback ? "AlgorithmOnlyFallback" : "Algoritma %30 + ML %70"
+                DataSource = response.IsFallback ? "RuleOnlyFallback" :
+                    $"Kural %{response.AlgorithmWeight * 100:0} + AI %{response.MachineLearningWeight * 100:0}"
             };
             dbContext.RiskAssessments.Add(assessment);
             dbContext.RiskFactorResults.AddRange(response.Factors.Select(factor =>
@@ -201,8 +214,8 @@ public sealed class RiskAssessmentService(
             trackedMachine.CurrentRiskScore = assessment.HybridScore;
             trackedMachine.CurrentRiskLevel = assessment.RiskLevel;
 
-            if (assessment.RiskLevel is RiskLevel.High or RiskLevel.Critical)
-                await CreateWarningAndOptionalDraftAsync(trackedMachine, assessment, cancellationToken);
+            await UpsertWarningAndMaintenancePlanAsync(
+                trackedMachine, assessment, response.AppliedOverrides, cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
             if (transaction is not null)
@@ -222,15 +235,17 @@ public sealed class RiskAssessmentService(
         }
     }
 
-    private async Task CreateWarningAndOptionalDraftAsync(
+    private async Task UpsertWarningAndMaintenancePlanAsync(
         Machine machine,
         RiskAssessment assessment,
+        IReadOnlyList<string> appliedOverrides,
         CancellationToken cancellationToken)
     {
         var now = assessment.EvaluatedAt;
         var recommendation = recommendationService.Get(assessment.RiskLevel);
         var dueAt = now.AddDays(recommendation.RecommendedDays);
-        if (!await dbContext.Alerts.AnyAsync(
+        if (assessment.RiskLevel is RiskLevel.High or RiskLevel.Critical &&
+            !await dbContext.Alerts.AnyAsync(
                 x => x.RiskAssessmentId == assessment.Id, cancellationToken))
         {
             dbContext.Alerts.Add(new Alert
@@ -247,19 +262,29 @@ public sealed class RiskAssessmentService(
             });
         }
 
-        var mayCreatePlan = hybridOptions.Value.AutoCreateMaintenanceDraft &&
-                            !assessment.IsFallback &&
-                            assessment.DataCompletenessPercent >=
-                            hybridOptions.Value.MinimumDataCompletenessPercent;
-        if (!mayCreatePlan)
+        if (!hybridOptions.Value.AutoCreateMaintenanceDraft)
             return;
 
-        var activePlan = await dbContext.MaintenancePlans.AnyAsync(x =>
+        var activePlan = await dbContext.MaintenancePlans.FirstOrDefaultAsync(x =>
             x.MachineId == machine.Id &&
             x.Status != MaintenancePlanStatus.Completed &&
             x.Status != MaintenancePlanStatus.Cancelled, cancellationToken);
-        if (activePlan)
+        var justification = string.Join("; ", new[] { assessment.RiskReasons }
+            .Concat(appliedOverrides).Where(x => !string.IsNullOrWhiteSpace(x)));
+        if (activePlan is not null)
+        {
+            activePlan.PlannedAt = dueAt;
+            activePlan.MaintenanceType = recommendation.MaintenanceType;
+            activePlan.Priority = classificationService.GetLabel(assessment.RiskLevel);
+            activePlan.Justification = justification;
+            activePlan.Recommendation = assessment.RecommendedAction;
+            activePlan.ModelConfidence = assessment.ModelConfidence;
+            activePlan.RiskAssessmentId = assessment.Id;
+            activePlan.DataSource = assessment.IsFallback
+                ? "Kural tabanlı risk motoru"
+                : "Hibrit risk motoru";
             return;
+        }
 
         dbContext.MaintenancePlans.Add(new MaintenancePlan
         {
@@ -269,11 +294,13 @@ public sealed class RiskAssessmentService(
             MaintenanceType = recommendation.MaintenanceType,
             Priority = classificationService.GetLabel(assessment.RiskLevel),
             Status = MaintenancePlanStatus.Suggested,
-            Justification = assessment.RiskReasons,
+            Justification = justification,
             Recommendation = assessment.RecommendedAction,
             ModelConfidence = assessment.ModelConfidence,
             RiskAssessmentId = assessment.Id,
-            DataSource = "Hibrit risk motoru"
+            DataSource = assessment.IsFallback
+                ? "Kural tabanlı risk motoru"
+                : "Hibrit risk motoru"
         });
     }
 
@@ -284,28 +311,29 @@ public sealed class RiskAssessmentService(
         AlgorithmicCalculationResult calculation,
         MlPredictionResult prediction,
         string? correlationId,
-        bool isFallback)
+        bool isFallback,
+        HybridRiskCalculation hybrid,
+        MachineFeatureDto features)
     {
-        var settings = hybridOptions.Value;
-        var hybridScore = isFallback
-            ? calculation.Score
-            : hybridRiskCalculator.Calculate(
-                calculation.Score,
-                prediction.RiskScore ?? throw new ExternalServiceException("ML skoru bulunamadı."));
-        var level = classificationService.Classify(hybridScore);
+        var level = classificationService.Classify(hybrid.FinalRiskScore);
+        var predictionMessages = prediction.Warnings
+            .Concat(string.IsNullOrWhiteSpace(prediction.ErrorMessage)
+                ? []
+                : new[] { prediction.ErrorMessage });
         var reasons = calculation.Reasons
-            .Concat(prediction.Warnings.Where(x => !string.IsNullOrWhiteSpace(x)))
+            .Concat(predictionMessages.Where(x => !string.IsNullOrWhiteSpace(x)))
+            .Concat(hybrid.AppliedOverrides)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         return new RiskAssessmentResponse(
             id, machineId, evaluatedAt, calculation.Score, prediction.RiskScore,
-            isFallback ? 1m : settings.AlgorithmWeight,
-            isFallback ? 0m : settings.MachineLearningWeight,
-            ToPresentation(hybridScore, level), calculation.Breakdown, reasons,
+            hybrid.RuleWeight, hybrid.AiWeight,
+            ToPresentation(hybrid.FinalRiskScore, level), calculation.Breakdown, reasons,
             recommendationService.Get(level).Action, prediction.ModelName,
             prediction.ModelVersion, prediction.Confidence, correlationId,
-            calculation.DataCompletenessPercent, calculation.MissingFactors,
-            calculation.Factors, isFallback, prediction.Status);
+            features.DataCompletenessRate, calculation.MissingFactors,
+            calculation.Factors, isFallback, prediction.Status,
+            hybrid.AppliedOverrides, hybrid.CalculationDetails);
     }
 
     private RiskAssessmentResponse MapExisting(RiskAssessment assessment)
@@ -314,7 +342,7 @@ public sealed class RiskAssessmentService(
             ? null
             : JsonSerializer.Deserialize<CalculationSnapshot>(assessment.AlgorithmDetailsJson);
         var breakdown = snapshot?.Breakdown ??
-            new AlgorithmicScoreBreakdown(0, 0, 0, 0, 0, 0, 0, assessment.AlgorithmicScore);
+            new AlgorithmicScoreBreakdown(0, 0, 0, 0, 0, 0, assessment.AlgorithmicScore);
         return new RiskAssessmentResponse(
             assessment.Id, assessment.MachineId, assessment.EvaluatedAt,
             assessment.AlgorithmicScore, assessment.MachineLearningScore,
@@ -324,21 +352,10 @@ public sealed class RiskAssessmentService(
             assessment.ModelName, assessment.ModelVersion, assessment.ModelConfidence,
             assessment.CorrelationId, assessment.DataCompletenessPercent,
             snapshot?.MissingFactors ?? [], snapshot?.Factors ?? [],
-            assessment.IsFallback, assessment.MlStatus);
+            assessment.IsFallback, assessment.MlStatus,
+            snapshot?.AppliedOverrides ?? [], snapshot?.CalculationDetails ??
+            new Dictionary<string, decimal>());
     }
-
-    private static IReadOnlyDictionary<string, object?> BuildFeatures(AlgorithmicRiskInput input) =>
-        new Dictionary<string, object?>
-        {
-            ["failureCount30Days"] = input.FailureCount30Days,
-            ["daysSinceLastMaintenance"] = input.DaysSinceLastMaintenance,
-            ["totalDowntimeHours30Days"] = input.TotalDowntimeHours30Days,
-            ["repeatedFailure"] = input.RepeatedFailure,
-            ["machineCriticality"] = input.Criticality,
-            ["counterLimitOverrunPercent"] = input.CounterLimitOverrunPercent,
-            ["sensorAnomalyScore"] = input.AnomalyScore7Days,
-            ["productionIntensityPercent"] = input.ProductionIntensity7Days
-        };
 
     private RiskPresentation ToPresentation(decimal score, RiskLevel level) =>
         new(score, classificationService.GetLabel(level), classificationService.GetColorName(level),
@@ -347,14 +364,13 @@ public sealed class RiskAssessmentService(
     private static string[] SplitReasons(string reasons) =>
         reasons.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
 
-    private static bool IsHighSeverity(string value) =>
-        value.Trim().ToUpperInvariant() is "YÜKSEK" or "YUKSEK" or "HIGH" or
-            "KRİTİK" or "KRITIK" or "CRITICAL";
-
     private static string NewId(string prefix) => $"{prefix}-{Guid.NewGuid():N}"[..28];
 
     private sealed record CalculationSnapshot(
         AlgorithmicScoreBreakdown Breakdown,
         IReadOnlyList<RiskFactorResult> Factors,
-        IReadOnlyList<string> MissingFactors);
+        IReadOnlyList<string> MissingFactors,
+        MachineFeatureDto? Features = null,
+        IReadOnlyList<string>? AppliedOverrides = null,
+        IReadOnlyDictionary<string, decimal>? CalculationDetails = null);
 }

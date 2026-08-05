@@ -12,6 +12,8 @@ using OnleyiciBakim.Integrations.Ml;
 using OnleyiciBakim.Options;
 using OnleyiciBakim.Services;
 using OnleyiciBakim.BackgroundJobs;
+using OnleyiciBakim.Services.Features;
+using OnleyiciBakim.Services.Risk;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,6 +27,7 @@ builder.Services
 
 builder.Services.AddProblemDetails();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddMemoryCache();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -41,17 +44,23 @@ builder.Services.AddSwaggerGen(options =>
 
 builder.Services.AddOptions<HybridRiskOptions>()
     .Bind(builder.Configuration.GetSection(HybridRiskOptions.SectionName))
-    .Validate(x => x.AlgorithmWeight >= 0m && x.MachineLearningWeight >= 0m &&
-                   x.AlgorithmWeight + x.MachineLearningWeight == 1m,
-        "Hibrit risk ağırlıklarının toplamı 1.00 olmalıdır.")
-    .Validate(x => x.MinimumDataCompletenessPercent is >= 0m and <= 100m,
-        "Minimum veri yeterliliği 0-100 aralığında olmalıdır.")
+    .Validate(x => x.HighCompletenessAiWeight >= 0m &&
+                   x.HighCompletenessRuleWeight >= 0m &&
+                   x.HighCompletenessAiWeight + x.HighCompletenessRuleWeight == 1m,
+        "Yüksek veri tamlığı hibrit ağırlıklarının toplamı 1.00 olmalıdır.")
+    .Validate(x => x.MediumCompletenessAiWeight >= 0m &&
+                   x.MediumCompletenessRuleWeight >= 0m &&
+                   x.MediumCompletenessAiWeight + x.MediumCompletenessRuleWeight == 1m,
+        "Orta veri tamlığı hibrit ağırlıklarının toplamı 1.00 olmalıdır.")
+    .Validate(x => x.MinimumCompletenessThreshold is >= 0m and <= 100m &&
+                   x.HighCompletenessThreshold is >= 0m and <= 100m &&
+                   x.HighCompletenessThreshold >= x.MinimumCompletenessThreshold,
+        "Veri tamlığı eşikleri 0-100 aralığında ve sıralı olmalıdır.")
     .ValidateOnStart();
 builder.Services.AddOptions<AlgorithmicRiskOptions>()
     .Bind(builder.Configuration.GetSection(AlgorithmicRiskOptions.SectionName))
     .Validate(x => x.FailureFrequencyWeight + x.MaintenanceAgeWeight + x.DowntimeWeight +
-                   x.RepeatedFailureWeight + x.CriticalityWeight + x.CounterOverrunWeight +
-                   x.ProductionImpactWeight == 1m,
+                   x.RepeatedFailureWeight + x.TelemetryAnomalyWeight + x.CriticalityWeight == 1m,
         "Algoritmik risk faktörü ağırlıklarının toplamı 1.00 olmalıdır.")
     .ValidateOnStart();
 builder.Services.AddOptions<MlServiceOptions>()
@@ -66,8 +75,18 @@ builder.Services.Configure<DatabaseOptions>(
     builder.Configuration.GetSection(DatabaseOptions.SectionName));
 builder.Services.Configure<IntegrationOptions>(
     builder.Configuration.GetSection(IntegrationOptions.SectionName));
-builder.Services.Configure<MaintenanceRecommendationOptions>(
-    builder.Configuration.GetSection(MaintenanceRecommendationOptions.SectionName));
+builder.Services.AddOptions<MaintenanceRecommendationOptions>()
+    .Bind(builder.Configuration.GetSection(MaintenanceRecommendationOptions.SectionName))
+    .Validate(x => x.LowDays > 0 && x.MediumDays > 0 && x.HighDays > 0 && x.CriticalDays > 0,
+        "Bakım planlama günleri sıfırdan büyük olmalıdır.")
+    .ValidateOnStart();
+builder.Services.AddOptions<RiskAutomationOptions>()
+    .Bind(builder.Configuration.GetSection(RiskAutomationOptions.SectionName))
+    .Validate(x => x.IntervalHours is > 0 and <= 720,
+        "Risk otomasyonu çalışma aralığı 1-720 saat olmalıdır.")
+    .Validate(x => x.BatchSize is > 0 and <= 1000,
+        "Risk otomasyonu batch boyutu 1-1000 olmalıdır.")
+    .ValidateOnStart();
 
 var databaseProvider = builder.Configuration[$"{DatabaseOptions.SectionName}:Provider"] ?? "PostgreSql";
 if (databaseProvider.Equals("InMemory", StringComparison.OrdinalIgnoreCase))
@@ -77,6 +96,14 @@ if (databaseProvider.Equals("InMemory", StringComparison.OrdinalIgnoreCase))
     builder.Services.AddDbContext<ApplicationDbContext>(options =>
         options.UseInMemoryDatabase("onleyici_bakim_development"));
 }
+else
+{
+    var connectionString = builder.Configuration.GetConnectionString("PostgreSql")
+        ?? throw new InvalidOperationException("ConnectionStrings:PostgreSql yapılandırması bulunamadı.");
+    builder.Services.AddDbContext<ApplicationDbContext>(options =>
+        options.UseNpgsql(connectionString, npgsql =>
+            npgsql.EnableRetryOnFailure(3, TimeSpan.FromSeconds(5), null)));
+}
 
 var useBakimYonetimiReadModel = builder.Configuration.GetValue<bool>(
     $"{DatabaseOptions.SectionName}:UseBakimYonetimiReadModel");
@@ -85,17 +112,9 @@ if (useBakimYonetimiReadModel)
     var bakimYonetimiConnection = builder.Configuration.GetConnectionString("BakimYonetimiSqlServer")
         ?? throw new InvalidOperationException(
             "ConnectionStrings:BakimYonetimiSqlServer yapılandırması bulunamadı.");
-    builder.Services.AddDbContext<BakimYonetimiDbContext>(options =>
+    builder.Services.AddDbContextFactory<BakimYonetimiDbContext>(options =>
         options.UseSqlServer(bakimYonetimiConnection, sqlServer =>
             sqlServer.EnableRetryOnFailure(3, TimeSpan.FromSeconds(5), null)));
-}
-else
-{
-    var connectionString = builder.Configuration.GetConnectionString("PostgreSql")
-        ?? throw new InvalidOperationException("ConnectionStrings:PostgreSql yapılandırması bulunamadı.");
-    builder.Services.AddDbContext<ApplicationDbContext>(options =>
-        options.UseNpgsql(connectionString, npgsql =>
-            npgsql.EnableRetryOnFailure(3, TimeSpan.FromSeconds(5), null)));
 }
 
 builder.Services.AddCors(options =>
@@ -154,6 +173,17 @@ builder.Services.AddScoped<IRiskClassificationService, RiskClassificationService
 builder.Services.AddScoped<IMaintenanceRecommendationService, MaintenanceRecommendationService>();
 builder.Services.AddScoped<IAlgorithmicRiskCalculator, AlgorithmicRiskCalculator>();
 builder.Services.AddScoped<IHybridRiskCalculator, HybridRiskCalculator>();
+builder.Services.AddScoped<IRuleBasedRiskService, RuleBasedRiskService>();
+builder.Services.AddScoped<IHybridRiskService, HybridRiskService>();
+builder.Services.AddScoped<MachineFeatureService>();
+if (useBakimYonetimiReadModel)
+{
+    builder.Services.AddScoped<BakimYonetimiMachineFeatureService>();
+    builder.Services.AddScoped<IMachineFeatureService, CompositeMachineFeatureService>();
+    builder.Services.AddScoped<IReadModelMlConfidenceService, ReadModelMlConfidenceService>();
+}
+else
+    builder.Services.AddScoped<IMachineFeatureService, MachineFeatureService>();
 builder.Services.AddScoped<IRiskAssessmentService, RiskAssessmentService>();
 if (useBakimYonetimiReadModel)
     builder.Services.AddScoped<IDashboardService, BakimYonetimiDashboardService>();
@@ -167,6 +197,7 @@ builder.Services.AddSingleton<ICsvImportService, CsvImportService>();
 builder.Services.AddScoped<IntegrationApiKeyFilter>();
 builder.Services.AddScoped<DevelopmentDataSeeder>();
 builder.Services.AddHostedService<ErpOutboxWorker>();
+builder.Services.AddHostedService<RiskRecalculationWorker>();
 
 var app = builder.Build();
 

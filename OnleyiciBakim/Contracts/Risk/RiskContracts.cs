@@ -24,6 +24,9 @@ public sealed class AlgorithmicRiskInput
     public decimal? TotalDowntimeHours30Days { get; init; }
 
     public bool? RepeatedFailure { get; init; }
+
+    [Range(0, 1000)]
+    public int? RepeatedFailureCount90Days { get; init; }
     public string? Criticality { get; init; }
 
     [Range(0, 10000)]
@@ -69,9 +72,8 @@ public sealed record AlgorithmicScoreBreakdown(
     decimal MaintenanceAge,
     decimal Downtime,
     decimal RepeatedFailure,
+    decimal TelemetryAnomaly,
     decimal Criticality,
-    decimal CounterOverrun,
-    decimal ProductionImpact,
     decimal Total);
 
 public sealed record RiskFactorResult(
@@ -104,7 +106,9 @@ public sealed record RiskAssessmentResponse(
     IReadOnlyList<string> MissingFactors,
     IReadOnlyList<RiskFactorResult> Factors,
     bool IsFallback,
-    string MlStatus);
+    string MlStatus,
+    IReadOnlyList<string> AppliedOverrides,
+    IReadOnlyDictionary<string, decimal> CalculationDetails);
 
 public sealed class RiskHistoryQuery : PaginationQuery
 {

@@ -13,7 +13,7 @@ public class MaintenancePlanItem
     public decimal PredictedRiskScore { get; set; }
 
     // Modelin tahmine olan güveni (%)
-    public decimal Confidence { get; set; }
+    public decimal? Confidence { get; set; }
 
     // Planlandı, Devam Ediyor, Tamamlandı
     public string Status { get; set; } = string.Empty;

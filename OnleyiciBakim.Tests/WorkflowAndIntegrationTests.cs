@@ -3,6 +3,7 @@ using OnleyiciBakim.Infrastructure;
 using OnleyiciBakim.Integrations.Ml;
 using OnleyiciBakim.Services;
 using OnleyiciBakim.Options;
+using OnleyiciBakim.Models.Ai;
 using Xunit;
 
 namespace OnleyiciBakim.Tests;
@@ -41,8 +42,8 @@ public sealed class WorkflowAndIntegrationTests
     {
         var client = new MockMlPredictionClient();
         var result = await client.PredictAsync(
-            new MlPredictionRequest("M-1", DateTimeOffset.UtcNow,
-                new Dictionary<string, object?>(), scenario), CancellationToken.None);
+            new MlPredictionRequest("M-1", new MachineFeatureDto(), scenario),
+            CancellationToken.None);
         Assert.False(result.IsSuccess);
         Assert.Equal(errorCode, result.ErrorCode);
         Assert.Null(result.RiskScore);
@@ -50,9 +51,9 @@ public sealed class WorkflowAndIntegrationTests
 
     [Theory]
     [InlineData(RiskLevel.Low, 60, "Periyodik")]
-    [InlineData(RiskLevel.Medium, 30, "Planlı")]
-    [InlineData(RiskLevel.High, 15, "Acil")]
-    [InlineData(RiskLevel.Critical, 7, "Acil müdahale")]
+    [InlineData(RiskLevel.Medium, 21, "Planlı")]
+    [InlineData(RiskLevel.High, 7, "Acil")]
+    [InlineData(RiskLevel.Critical, 3, "Acil müdahale")]
     public void MaintenanceRecommendation_UsesCentralConfiguration(
         RiskLevel level,
         int days,

@@ -49,10 +49,13 @@ Kesin sınıflandırma tek merkezde `RiskClassificationService` tarafından uygu
 | `60 <= x < 80` | Yüksek | `red` | `#EF4444` |
 | `80 <= x <= 100` | Kritik | `dark-red` | `#7F1D1D` |
 
-Ham değerler 0-100'e clamp edilir. Hibrit skor hesap sırasında yuvarlanmaz:
+Ham değerler 0-100'e clamp edilir. Hibrit skor hesap sırasında yuvarlanmaz ve 20 model
+özelliğinin veri tamlığına göre ağırlık seçer:
 
 ```text
-nihaiRisk = algoritmikRisk × 0.30 + mlRisk × 0.70
+tamlık >= %80  -> AI × 0.40 + kural × 0.60
+tamlık %50–79  -> AI × 0.20 + kural × 0.80
+tamlık < %50   -> kural × 1.00
 ```
 
 Algoritmik faktörler `AlgorithmicRisk` config bölümünden gelir ve toplamları başlangıçta 1.00 olarak
@@ -62,23 +65,24 @@ doğrulanır:
 - Son bakımdan geçen süre `%20`
 - Duruş süresi `%15`
 - Tekrarlayan arıza `%15`
+- Telemetri/anomali `%15`
 - Makine kritiklik `%10`
-- Sayaç/çalışma limiti aşımı `%10`
-- Üretim etkisi `%5`
 
 Her analiz ham değer, normalize değer, ağırlık, katkı, açıklama, eksik faktörler ve
-`dataCompletenessPercent` üretir. Eksik ağırlıklar dağıtılmaz. Eşik altındaki analiz otomatik plan
-oluşturmaz.
+`dataCompletenessPercent` üretir. Kritik telemetri ve 7 günlük kritik arıza tekrarı skoru en az
+80'e; geçmiş zorunlu bakım tarihi en az 60'a taşır. Bakım planı nihai seviyeden 60/21/7/3 gün
+ile hesaplanır; aktif plan varsa kopya oluşturmak yerine güncellenir.
 
 ## 4. ML entegrasyonu
 
-`IMlPredictionClient` için `HttpMlPredictionClient` ve yalnızca Development/Test ortamında seçilebilen
-`MockMlPredictionClient` bulunur. Ayarlar:
+`IMachineFeatureService`, uygulama tablolarından (ve mevcut SQL Server şeması seçiliyse onun gerçek
+alanlarından) 20 snake_case özelliği aggregate sorgularla üretir. `IMlPredictionClient` bu DTO'yu
+Python 3.11 servisine yollar. Testler için `MockMlPredictionClient` korunur. Ayarlar:
 
 ```json
 "MlService": {
-  "BaseUrl": "https://ml-service.example",
-  "PredictionEndpoint": "/api/predict",
+  "BaseUrl": "http://127.0.0.1:5001",
+  "PredictionEndpoint": "/api/v1/predict",
   "TimeoutSeconds": 15,
   "ApiKey": "",
   "RetryCount": 2,
@@ -86,15 +90,14 @@ oluşturmaz.
 }
 ```
 
-Request; `machineId`, `analysisTimeUtc` ve feature sözlüğünü taşır. Response; `riskScore`,
-`modelName`, `modelVersion`, `predictionId`, `predictedAtUtc`, `confidence`, `warnings` alanlarını
-destekler. Timeout, bağlantı, HTTP hata, bozuk JSON ve geçersiz skor açık hata durumudur.
+Request `machineId` ve 20 alanlı `features` nesnesini taşır. Response `aiRiskScore`,
+`failureProbability`, `aiRiskLevel`, `dataCompletenessRate`, `missingFields`, `warnings`, aksiyon,
+açıklama, model sürümü ve tahmin tarihini destekler. Python kesin bakım tarihi üretmez.
 
-`HybridRisk:MlFailurePolicy`:
-
-- `FailClosed` (Production varsayılanı): HTTP 503, karar/plan üretilmez.
-- `AlgorithmOnlyFallback`: algoritmik skor kullanılır; `isFallback=true`, ML skoru `null` ve karar
-  geçmişi açıkça fallback olarak kaydedilir. Fallback analizinden otomatik plan üretilmez.
+Timeout, bağlantı, HTTP hata, bozuk JSON, geçersiz skor veya `%50` altı veri durumunda backend
+kural skoruyla devam eder; `isFallback=true`, AI ağırlığı sıfır olur ve karar geçmişine açıkça
+fallback kaydı yazılır. Ayrıntılı model sözleşmesi ve performans raporu `MlService/README.md` ile
+`MlService/model_artifacts/evaluation_report.json` içindedir.
 
 ## 5. ERP ve outbox
 

@@ -19,7 +19,9 @@ else
     builder.Services.AddHttpClient<IMaintenanceDataService, BackendMaintenanceDataService>(client =>
     {
         client.BaseAddress = new Uri(backendBaseUrl);
-        client.Timeout = TimeSpan.FromSeconds(30);
+        // The first maintenance-plan request may enrich historical SQL rows with live ML
+        // predictions. Subsequent requests are served from the backend cache.
+        client.Timeout = TimeSpan.FromSeconds(60);
     });
 }
 

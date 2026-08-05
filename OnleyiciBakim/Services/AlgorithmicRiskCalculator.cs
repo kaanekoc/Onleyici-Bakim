@@ -25,22 +25,23 @@ public sealed class AlgorithmicRiskCalculator(IOptions<AlgorithmicRiskOptions> o
                 settings.DowntimeWeight,
                 value => Normalize(Convert.ToDecimal(value, CultureInfo.InvariantCulture), settings.DowntimeMaximumHours),
                 "Son 30 gündeki toplam duruş saati"),
-            Factor("repeatedFailure", "Tekrarlayan arıza", input.RepeatedFailure,
+            Factor("repeatedFailure", "Tekrarlayan arıza",
+                input.RepeatedFailureCount90Days.HasValue
+                    ? (object)input.RepeatedFailureCount90Days.Value
+                    : input.RepeatedFailure,
                 settings.RepeatedFailureWeight,
-                value => (bool)value ? 100m : 0m,
-                "Tekrarlayan arıza göstergesi"),
+                value => input.RepeatedFailureCount90Days.HasValue
+                    ? Normalize(input.RepeatedFailureCount90Days.Value, settings.RepeatedFailureMaximum)
+                    : (bool)value ? 100m : 0m,
+                "Son 90 gündeki tekrarlayan arıza sayısı"),
+            Factor("telemetryAnomaly", "Telemetri/anomali durumu", input.AnomalyScore7Days,
+                settings.TelemetryAnomalyWeight,
+                value => Normalize(Convert.ToDecimal(value, CultureInfo.InvariantCulture), settings.AnomalyScoreMaximum),
+                "Son 7 günlük ortalama anomali puanı"),
             Factor("criticality", "Makine kritiklik seviyesi", input.Criticality,
                 settings.CriticalityWeight,
                 value => NormalizeCriticality(value?.ToString()),
-                "Makinenin işletme kritiklik seviyesi"),
-            Factor("counterOverrun", "Sayaç/çalışma limit aşımı", input.CounterLimitOverrunPercent,
-                settings.CounterOverrunWeight,
-                value => Normalize(Convert.ToDecimal(value, CultureInfo.InvariantCulture), settings.CounterOverrunMaximumPercent),
-                "Çalışma saati veya sayaç limit aşım yüzdesi"),
-            Factor("productionImpact", "Üretim etkisi", input.ProductionStoppingFailureCount30Days,
-                settings.ProductionImpactWeight,
-                value => Normalize(Convert.ToDecimal(value, CultureInfo.InvariantCulture), settings.ProductionStoppingFailureMaximum),
-                "Üretimi durduran arıza sayısı")
+                "Makinenin işletme kritiklik seviyesi")
         };
 
         var total = Math.Clamp(factors.Sum(x => x.Contribution), 0m, 100m);
@@ -60,9 +61,8 @@ public sealed class AlgorithmicRiskCalculator(IOptions<AlgorithmicRiskOptions> o
             byKey["maintenanceAge"].Contribution,
             byKey["downtime"].Contribution,
             byKey["repeatedFailure"].Contribution,
+            byKey["telemetryAnomaly"].Contribution,
             byKey["criticality"].Contribution,
-            byKey["counterOverrun"].Contribution,
-            byKey["productionImpact"].Contribution,
             total);
 
         return new AlgorithmicCalculationResult(
