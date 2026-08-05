@@ -1,0 +1,167 @@
+@model DashboardViewModel
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-xl-3">
+        <div class="stat-card reveal">
+            <div class="stat-icon icon-primary"><i class="bi bi-hdd-stack-fill"></i></div>
+            <div class="stat-label">Toplam Makine</div>
+            <div class="stat-value"><span class="count-up" data-target="@Model.TotalMachines">0</span></div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="stat-card reveal">
+            <div class="stat-icon icon-danger"><i class="bi bi-exclamation-octagon-fill"></i></div>
+            <div class="stat-label">Riskli Makine <span class="text-muted">(skor ≥ 60)</span></div>
+            <div class="stat-value text-danger"><span class="count-up" data-target="@Model.RiskyMachineCount">0</span></div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="stat-card reveal">
+            <div class="stat-icon icon-warn"><i class="bi bi-calendar-event-fill"></i></div>
+            <div class="stat-label">Bekleyen Bakım Planı</div>
+            <div class="stat-value"><span class="count-up" data-target="@Model.PendingPlanCount">0</span></div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="stat-card reveal">
+            <div class="stat-icon icon-accent"><i class="bi bi-clock-history"></i></div>
+            <div class="stat-label">Ort. Arıza Süresi</div>
+            <div class="stat-value"><span class="count-up" data-target="@Model.AverageDowntimeHours.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)" data-decimals="1">0</span> sa</div>
+        </div>
+    </div>
+</div>
+<div id="chartError" class="chart-error d-none mb-3" role="alert"></div>
+
+<div class="row g-3 mb-3">
+    <div class="col-lg-7">
+        <div class="chart-card reveal">
+            <div class="section-title"><i class="bi bi-bar-chart-fill"></i> Aylık Arıza Sayısı (Son 6 Ay)</div>
+            <div class="chart-wrap">
+                <canvas id="monthlyFaultChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="chart-card reveal">
+            <div class="section-title"><i class="bi bi-pie-chart-fill"></i> Arıza Türü Dağılımı</div>
+            <div class="chart-wrap">
+                <canvas id="faultTypeChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-12">
+        <div class="surface-card reveal">
+            <div class="section-title"><i class="bi bi-speedometer2"></i> En Riskli 5 Makine</div>
+            <table class="table-modern">
+                <thead>
+                    <tr>
+                        <th>Makine</th>
+                        <th>Konum</th>
+                        <th>Sonraki Bakım</th>
+                        <th>Risk Skoru</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var m in Model.TopRiskMachines)
+                {
+                    var pillClass = m.RiskColorKey is "red" or "dark-red" ? "pill-danger" : m.RiskColorKey == "amber" ? "pill-warn" : "pill-ok";
+                    var barColor = m.RiskColorKey switch { "dark-red" => "#7f1d1d", "red" => "#ef4444", "amber" => "#f59e0b", _ => "#16a34a" };
+                    <tr class="table-row-link reveal" onclick="location.href='@Url.Action("Details", "Machines", new { id = m.Id })'">
+                        <td>
+                            <div class="fw-semibold">@m.Name</div>
+                            <div class="text-muted small">@m.Code</div>
+                        </td>
+                        <td>@m.Location</td>
+                        <td>@(m.NextMaintenanceDate == DateTime.MinValue ? "—" : m.NextMaintenanceDate.ToString("dd.MM.yyyy"))</td>
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="risk-bar"><span data-width="@m.RiskScore" style="background:@barColor;"></span></div>
+                                <span class="pill @pillClass">@m.RiskScore.ToString("0.##") · @m.RiskLevel</span>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/lib/chart.js/chart.umd.js" asp-append-version="true"></script>
+    <script>
+        async function loadCharts() {
+            const errorBox = document.getElementById('chartError');
+            try {
+                if (typeof Chart === 'undefined') {
+                    throw new Error('Grafik kütüphanesi yüklenemedi.');
+                }
+
+                const getJson = async (url) => {
+                    const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                    if (!response.ok) {
+                        throw new Error(`Grafik verisi alınamadı (${response.status}).`);
+                    }
+                    return response.json();
+                };
+
+                const [monthly, types] = await Promise.all([
+                    getJson('/api/charts/monthly-faults'),
+                    getJson('/api/charts/fault-types'),
+                ]);
+
+                new Chart(document.getElementById('monthlyFaultChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: monthly.map(m => m.month),
+                        datasets: [{
+                            label: 'Arıza Sayısı',
+                            data: monthly.map(m => m.count),
+                            backgroundColor: '#4f46e5',
+                            borderRadius: 6,
+                            maxBarThickness: 38,
+                        }]
+                    },
+                    options: {
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#eef0f6' } },
+                            x: { grid: { display: false } }
+                        }
+                    }
+                });
+
+                new Chart(document.getElementById('faultTypeChart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: types.map(t => t.name),
+                        datasets: [{
+                            data: types.map(t => t.value),
+                            backgroundColor: ['#4f46e5', '#e07a1f', '#14b8a6', '#ef4444', '#8b5cf6'],
+                            borderWidth: 2,
+                            borderColor: '#ffffff',
+                        }]
+                    },
+                    options: {
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } },
+                        cutout: '62%',
+                    }
+                });
+            } catch (error) {
+                console.error('Dashboard grafikleri yüklenemedi.', error);
+                errorBox.textContent = error.message || 'Dashboard grafikleri yüklenemedi.';
+                errorBox.classList.remove('d-none');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', loadCharts, { once: true });
+    </script>
+}
