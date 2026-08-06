@@ -42,7 +42,6 @@ public sealed class RiskRecalculationWorker(
                     .Where(x => x.Aktif)
                     .OrderBy(x => x.MakineId)
                     .Select(x => x.MakineId)
-                    .Take(batchSize)
                     .ToListAsync(cancellationToken);
             }
             else
@@ -52,35 +51,39 @@ public sealed class RiskRecalculationWorker(
                     .Where(x => x.Status == "Aktif")
                     .OrderBy(x => x.Id)
                     .Select(x => x.Id)
-                    .Take(batchSize)
                     .ToListAsync(cancellationToken);
             }
             var riskService = scope.ServiceProvider.GetRequiredService<IRiskAssessmentService>();
             var runDate = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
-            foreach (var machineId in machineIds)
+            var processedCount = 0;
+            foreach (var batch in machineIds.Chunk(Math.Max(1, batchSize)))
             {
-                try
+                foreach (var machineId in batch)
                 {
-                    if (localRiskService is not null)
-                        await localRiskService.EvaluateMachineAsync(
-                            machineId, $"Zamanlanmış otomatik analiz {runDate}", cancellationToken);
-                    else
-                        await riskService.EvaluateMachineAsync(
-                            machineId,
-                            new EvaluateMachineRiskRequest
-                            {
-                                CorrelationId = $"auto-{runDate}-{machineId}"
-                            },
-                            cancellationToken);
-                }
-                catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
-                {
-                    logger.LogError(exception,
-                        "Otomatik risk hesaplama başarısız. MachineId={MachineId}", machineId);
+                    try
+                    {
+                        if (localRiskService is not null)
+                            await localRiskService.EvaluateMachineAsync(
+                                machineId, $"Zamanlanmış otomatik analiz {runDate}", cancellationToken);
+                        else
+                            await riskService.EvaluateMachineAsync(
+                                machineId,
+                                new EvaluateMachineRiskRequest
+                                {
+                                    CorrelationId = $"auto-{runDate}-{machineId}"
+                                },
+                                cancellationToken);
+                        processedCount++;
+                    }
+                    catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+                    {
+                        logger.LogError(exception,
+                            "Otomatik risk hesaplama başarısız. MachineId={MachineId}", machineId);
+                    }
                 }
             }
             logger.LogInformation("Otomatik risk hesaplama tamamlandı. MachineCount={MachineCount}",
-                machineIds.Count);
+                processedCount);
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {

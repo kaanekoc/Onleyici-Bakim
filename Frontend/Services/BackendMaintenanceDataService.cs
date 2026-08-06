@@ -119,16 +119,28 @@ public sealed class BackendMaintenanceDataService(
     }
 
     public async Task<IReadOnlyList<MonthlyFaultPoint>> GetMonthlyFaultTrendAsync(
+        int months,
+        int? year,
         CancellationToken cancellationToken = default)
     {
+        months = months == 12 ? 12 : 6;
+        var yearQuery = year.HasValue ? $"&year={year.Value}" : string.Empty;
         var dashboard = await httpClient.GetFromJsonAsync<DashboardApiItem>(
-            "api/v1/dashboard?months=6", cancellationToken);
+            $"api/v1/dashboard?months={months}{yearQuery}", cancellationToken);
         return dashboard?.MonthlyFailureAnalysis.Select(x => new MonthlyFaultPoint
         {
-            Month = x.Label,
+            Month = $"{x.Label} {x.Year}",
             Count = x.FailureCount
         }).ToArray() ?? [];
     }
+
+    public async Task<IReadOnlyList<int>> GetFaultYearsAsync(
+        CancellationToken cancellationToken = default) =>
+        (await GetFaultsAsync(cancellationToken))
+            .Select(x => x.Date.Year)
+            .Distinct()
+            .OrderByDescending(x => x)
+            .ToArray();
 
     public async Task<IReadOnlyList<FaultTypeDistributionPoint>> GetFaultTypeDistributionAsync(
         CancellationToken cancellationToken = default)
@@ -168,7 +180,14 @@ public sealed class BackendMaintenanceDataService(
         Severity = item.Severity,
         DowntimeHours = item.DowntimeHours,
         Technician = item.Technician ?? "Atanmamış",
-        Resolved = item.Status is "Closed" or "Resolved" or "Kapalı" or "Çözüldü"
+        Resolved = IsResolvedStatus(item.Status)
+    };
+
+    private static bool IsResolvedStatus(string status) => status.Trim() switch
+    {
+        "Closed" or "Resolved" or "Kapalı" or "Kapandı" or "Kapatıldı" or
+        "Çözüldü" or "Tamamlandı" => true,
+        _ => false
     };
 
     private static string TranslateStatus(string status) => status switch
@@ -250,6 +269,7 @@ public sealed class BackendMaintenanceDataService(
     private sealed record RiskiestApiItem(
         string Id, string Code, string Name, string? Location,
         DateTimeOffset? NextMaintenanceAt, RiskApiItem Risk);
-    private sealed record MonthlyFailurePointApiItem(string Label, int FailureCount);
+    private sealed record MonthlyFailurePointApiItem(
+        int Year, int Month, string Label, int FailureCount);
     private sealed record CategoryApiItem(string Category, int Count);
 }

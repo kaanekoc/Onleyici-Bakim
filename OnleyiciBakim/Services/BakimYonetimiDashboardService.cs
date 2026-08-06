@@ -20,23 +20,42 @@ public sealed class BakimYonetimiDashboardService(
     public async Task<DashboardResponse> GetAsync(
         int months,
         int riskyMachineCount,
+        int? year,
         CancellationToken cancellationToken)
     {
         months = Math.Clamp(months, 1, 24);
         riskyMachineCount = Math.Clamp(riskyMachineCount, 1, 50);
 
         var now = DateTime.UtcNow;
-        var latestFailure = await dbContext.ArizaKartlari
+        var latestFailureQuery = dbContext.ArizaKartlari
             .AsNoTracking()
+            .AsQueryable();
+        if (year.HasValue)
+        {
+            var selectedStart = new DateTime(year.Value, 1, 1);
+            var selectedEnd = selectedStart.AddYears(1);
+            latestFailureQuery = latestFailureQuery.Where(
+                x => x.ArizaTarihi >= selectedStart && x.ArizaTarihi < selectedEnd);
+        }
+        var latestFailure = await latestFailureQuery
             .MaxAsync(x => (DateTime?)x.ArizaTarihi, cancellationToken);
 
-        // The delivered dataset is historical (2015). Anchor charts to its latest
-        // observation so a valid backup does not render as six empty months.
-        var chartAnchor = latestFailure.HasValue && latestFailure.Value < now.AddMonths(-(months - 1))
-            ? latestFailure.Value
-            : now;
-        var periodStart = new DateTime(chartAnchor.Year, chartAnchor.Month, 1)
-            .AddMonths(-(months - 1));
+        DateTime periodStart;
+        if (year.HasValue && months == 12)
+        {
+            periodStart = new DateTime(year.Value, 1, 1);
+        }
+        else
+        {
+            // Seçilen yıldaki son kayıt, tarihsel yedekteki son kayıt veya güncel ay
+            // grafiğin bitiş ayıdır. Böylece 6 aylık görünüm daima altı gerçek ay taşır.
+            var fallbackAnchor = year.HasValue
+                ? year.Value == now.Year ? now : new DateTime(year.Value, 12, 1)
+                : now;
+            var chartAnchor = latestFailure ?? fallbackAnchor;
+            periodStart = new DateTime(chartAnchor.Year, chartAnchor.Month, 1)
+                .AddMonths(-(months - 1));
+        }
         var periodEnd = periodStart.AddMonths(months);
 
         var totalMachines = await dbContext.Makineler.AsNoTracking().CountAsync(cancellationToken);

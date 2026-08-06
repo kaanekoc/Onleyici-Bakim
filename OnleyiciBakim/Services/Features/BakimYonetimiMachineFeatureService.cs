@@ -19,7 +19,7 @@ public sealed class BakimYonetimiMachineFeatureService(
         var requestedAt = calculationDate.Kind == DateTimeKind.Utc
             ? calculationDate
             : calculationDate.ToUniversalTime();
-        var at = await ResolveDataDateAsync(requestedAt, cancellationToken);
+        var at = await ResolveDataDateAsync(machineId, requestedAt, cancellationToken);
         var ago7 = at.AddDays(-7);
         var ago30 = at.AddDays(-30);
         var ago90 = at.AddDays(-90);
@@ -146,25 +146,30 @@ public sealed class BakimYonetimiMachineFeatureService(
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private async Task<DateTime> ResolveDataDateAsync(
+        string machineId,
         DateTime requestedAt,
         CancellationToken cancellationToken)
     {
         var latestMaintenance = await dbContext.BakimKayitlari.AsNoTracking()
+            .Where(x => x.MakineId == machineId)
             .MaxAsync(x => (DateTime?)x.BakimTarihi, cancellationToken);
         var latestFailure = await dbContext.ArizaKartlari.AsNoTracking()
+            .Where(x => x.MakineId == machineId)
             .MaxAsync(x => (DateTime?)x.ArizaTarihi, cancellationToken);
         var latestError = await dbContext.HataKayitlari.AsNoTracking()
+            .Where(x => x.MakineId == machineId)
             .MaxAsync(x => (DateTime?)x.HataTarihi, cancellationToken);
         var latestTelemetry = await dbContext.TelemetriGunluk.AsNoTracking()
+            .Where(x => x.MakineId == machineId)
             .MaxAsync(x => (DateTime?)x.Tarih, cancellationToken);
         var latestObservation = new DateTime?[]
         {
             latestMaintenance, latestFailure, latestError, latestTelemetry
         }.Max();
 
-        // Teslim edilen SQL veri seti tarihsel bir anlık görüntüdür. Veri kümesinin
-        // tamamı 90 günlük özellik penceresinin dışındaysa hesaplamayı son gözleme
-        // sabitle; canlı veri bulunan ortamlarda istenen güncel tarih kullanılmaya devam eder.
+        // Aynı veritabanında tarihsel makineler ile yeni/güncel makineler birlikte
+        // bulunabilir. Referans tarihini sistem genelinden değil makine özelinden seç;
+        // yeni bir güncel kayıt eski makinelerin tüm 30/90 günlük sinyallerini sıfırlamasın.
         return latestObservation.HasValue && latestObservation.Value < requestedAt.AddDays(-90)
             ? latestObservation.Value
             : requestedAt;

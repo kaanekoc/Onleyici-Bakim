@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using OnleyiciBakim.Contracts.Management;
+using OnleyiciBakim.Contracts.Risk;
 using OnleyiciBakim.Data.BakimYonetimi;
 using OnleyiciBakim.Data.BakimYonetimi.Entities;
 using OnleyiciBakim.Infrastructure;
@@ -27,6 +28,19 @@ public sealed class MachineManagementServiceTests
         Assert.True(result.Success);
         Assert.Equal("Local", entity.VeriKaynagi);
         Assert.Equal("LOCAL-01", entity.MakineKodu);
+    }
+
+    [Fact]
+    public async Task Create_ImmediatelyRequestsInitialRiskCalculation()
+    {
+        await using var db = CreateContext();
+        SeedHierarchy(db);
+        var risk = new RecordingRiskAssessmentService();
+        var service = CreateService(db, risk: risk);
+
+        var result = await service.CreateAsync(ValidRequest("LOCAL-RISK"), CancellationToken.None);
+
+        Assert.Equal(result.Id, Assert.Single(risk.MachineIds));
     }
 
     [Fact]
@@ -81,11 +95,29 @@ public sealed class MachineManagementServiceTests
             service.CreateAsync(ValidRequest("LOCAL-01"), CancellationToken.None));
     }
 
-    private static MachineManagementService CreateService(BakimYonetimiDbContext db, bool master = false) =>
+    private static MachineManagementService CreateService(
+        BakimYonetimiDbContext db,
+        bool master = false,
+        ILocalRiskAssessmentService? risk = null) =>
         new(db, new RiskClassificationService(),
             Microsoft.Extensions.Options.Options.Create(
                 new ErpIntegrationOptions { Enabled = master, UseErpAsMasterSource = master }),
-            NullLogger<MachineManagementService>.Instance);
+            NullLogger<MachineManagementService>.Instance,
+            risk);
+
+    private sealed class RecordingRiskAssessmentService : ILocalRiskAssessmentService
+    {
+        public List<string> MachineIds { get; } = [];
+
+        public Task<RiskAssessmentResponse> EvaluateMachineAsync(
+            string machineId,
+            string calculationReason,
+            CancellationToken cancellationToken)
+        {
+            MachineIds.Add(machineId);
+            return Task.FromResult<RiskAssessmentResponse>(null!);
+        }
+    }
 
     private static MachineUpsertRequest ValidRequest(string code) => new()
     {

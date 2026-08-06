@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 
 namespace OnleyiciBakimSistemi.Models.ViewModels;
 
@@ -22,7 +23,9 @@ public sealed class DefinitionFormViewModel
 {
     public string Module { get; set; } = string.Empty;
     public string? Id { get; set; }
+    [ValidateNever]
     public DefinitionMetadataViewModel Metadata { get; set; } = null!;
+    [ValidateNever]
     public IReadOnlyList<DefinitionRowViewModel> Parents { get; set; } = [];
 
     [Required(ErrorMessage = "Kod zorunludur.")]

@@ -14,13 +14,35 @@ public sealed class DashboardService(
     public async Task<DashboardResponse> GetAsync(
         int months,
         int riskyMachineCount,
+        int? year,
         CancellationToken cancellationToken)
     {
         months = Math.Clamp(months, 1, 24);
         riskyMachineCount = Math.Clamp(riskyMachineCount, 1, 50);
         var now = DateTimeOffset.UtcNow;
-        var periodStart = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero)
-            .AddMonths(-(months - 1));
+        var latestFailureQuery = dbContext.FailureRecords.AsNoTracking().AsQueryable();
+        if (year.HasValue)
+        {
+            var selectedStart = new DateTimeOffset(year.Value, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            latestFailureQuery = latestFailureQuery.Where(
+                x => x.OccurredAt >= selectedStart && x.OccurredAt < selectedStart.AddYears(1));
+        }
+        var latestFailure = await latestFailureQuery
+            .MaxAsync(x => (DateTimeOffset?)x.OccurredAt, cancellationToken);
+        DateTimeOffset periodStart;
+        if (year.HasValue && months == 12)
+        {
+            periodStart = new DateTimeOffset(year.Value, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        }
+        else
+        {
+            var chartAnchor = latestFailure ?? (year.HasValue && year.Value != now.Year
+                ? new DateTimeOffset(year.Value, 12, 1, 0, 0, 0, TimeSpan.Zero)
+                : now);
+            periodStart = new DateTimeOffset(
+                chartAnchor.Year, chartAnchor.Month, 1, 0, 0, 0, TimeSpan.Zero)
+                .AddMonths(-(months - 1));
+        }
 
         var totalMachines = await dbContext.Machines.CountAsync(cancellationToken);
         var riskyMachines = await dbContext.Machines.CountAsync(
@@ -36,7 +58,7 @@ public sealed class DashboardService(
             .AverageAsync(x => (decimal?)x.DowntimeMinutes, cancellationToken) ?? 0m;
 
         var monthlyRaw = await dbContext.FailureRecords
-            .Where(x => x.OccurredAt >= periodStart)
+            .Where(x => x.OccurredAt >= periodStart && x.OccurredAt < periodStart.AddMonths(months))
             .GroupBy(x => new { x.OccurredAt.Year, x.OccurredAt.Month })
             .Select(group => new
             {

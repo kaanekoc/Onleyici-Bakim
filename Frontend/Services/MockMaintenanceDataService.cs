@@ -122,21 +122,38 @@ public class MockMaintenanceDataService : IMaintenanceDataService
         Task.FromResult<IReadOnlyList<MaintenancePlanItem>>(_plans);
 
     public Task<IReadOnlyList<MonthlyFaultPoint>> GetMonthlyFaultTrendAsync(
+        int months,
+        int? year,
         CancellationToken cancellationToken = default)
     {
+        months = months == 12 ? 12 : 6;
+        var now = DateTime.Today;
+        var matching = year.HasValue ? _faults.Where(x => x.Date.Year == year.Value) : _faults;
+        var latest = matching.OrderByDescending(x => x.Date).Select(x => (DateTime?)x.Date).FirstOrDefault();
+        var anchor = latest ?? (year.HasValue && year.Value != now.Year
+            ? new DateTime(year.Value, 12, 1)
+            : now);
+        var start = year.HasValue && months == 12
+            ? new DateTime(year.Value, 1, 1)
+            : new DateTime(anchor.Year, anchor.Month, 1).AddMonths(-(months - 1));
         var points = new List<MonthlyFaultPoint>();
-        for (int i = 5; i >= 0; i--)
+        for (var i = 0; i < months; i++)
         {
-            var month = DateTime.Today.AddMonths(-i);
+            var month = start.AddMonths(i);
             var count = _faults.Count(f => f.Date.Year == month.Year && f.Date.Month == month.Month);
             points.Add(new MonthlyFaultPoint
             {
-                Month = month.ToString("MMM", new System.Globalization.CultureInfo("tr-TR")),
+                Month = month.ToString("MMM yyyy", new System.Globalization.CultureInfo("tr-TR")),
                 Count = count,
             });
         }
         return Task.FromResult<IReadOnlyList<MonthlyFaultPoint>>(points);
     }
+
+    public Task<IReadOnlyList<int>> GetFaultYearsAsync(
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<int>>(_faults.Select(x => x.Date.Year)
+            .Distinct().OrderByDescending(x => x).ToArray());
 
     public Task<IReadOnlyList<FaultTypeDistributionPoint>> GetFaultTypeDistributionAsync(
         CancellationToken cancellationToken = default) =>

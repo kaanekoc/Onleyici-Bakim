@@ -14,6 +14,10 @@ public interface IMaintenanceDataService
     Task<IReadOnlyList<MaintenancePlanItem>> GetMaintenancePlansAsync(
         CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MonthlyFaultPoint>> GetMonthlyFaultTrendAsync(
+        int months,
+        int? year,
+        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<int>> GetFaultYearsAsync(
         CancellationToken cancellationToken = default);
     Task<IReadOnlyList<FaultTypeDistributionPoint>> GetFaultTypeDistributionAsync(
         CancellationToken cancellationToken = default);

@@ -88,13 +88,19 @@ public sealed class BakimYonetimiReadModelTests
         var service = new BakimYonetimiDashboardService(
             context,
             new RiskClassificationService());
-        var result = await service.GetAsync(6, 5, CancellationToken.None);
+        var result = await service.GetAsync(6, 5, null, CancellationToken.None);
 
         Assert.Equal(1, result.TotalMachines);
         Assert.Equal(1, result.HighOrCriticalRiskMachines);
         Assert.Equal(2, result.MonthlyFailureAnalysis.Sum(x => x.FailureCount));
         Assert.Equal(1.5m, result.AverageFailureDurationHours);
         Assert.Contains(result.MonthlyFailureAnalysis, x => x.Year == 2015 && x.Month == 12);
+
+        var selectedYear = await service.GetAsync(12, 5, 2015, CancellationToken.None);
+        Assert.Equal(12, selectedYear.MonthlyFailureAnalysis.Count);
+        Assert.Equal(1, selectedYear.MonthlyFailureAnalysis.First().Month);
+        Assert.Equal(12, selectedYear.MonthlyFailureAnalysis.Last().Month);
+        Assert.Equal(2, selectedYear.MonthlyFailureAnalysis.Sum(x => x.FailureCount));
     }
 
     private static BakimYonetimiDbContext CreateContext()

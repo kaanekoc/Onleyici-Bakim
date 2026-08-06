@@ -13,8 +13,12 @@ public sealed class DashboardController(IDashboardService dashboardService) : Co
     public async Task<ActionResult<DashboardResponse>> Get(
         [FromQuery] int months = 6,
         [FromQuery] int riskyMachineCount = 5,
+        [FromQuery] int? year = null,
         CancellationToken cancellationToken = default)
     {
-        return Ok(await dashboardService.GetAsync(months, riskyMachineCount, cancellationToken));
+        if (year is < 1900 or > 2200)
+            return ValidationProblem("Yıl 1900-2200 aralığında olmalıdır.");
+        return Ok(await dashboardService.GetAsync(
+            months, riskyMachineCount, year, cancellationToken));
     }
 }

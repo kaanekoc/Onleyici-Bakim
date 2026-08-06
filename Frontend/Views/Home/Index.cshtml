@@ -38,7 +38,20 @@
 <div class="row g-3 mb-3">
     <div class="col-lg-7">
         <div class="chart-card reveal">
-            <div class="section-title"><i class="bi bi-bar-chart-fill"></i> Aylık Arıza Sayısı (Son 6 Ay)</div>
+            <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap mb-2">
+                <div class="section-title mb-0"><i class="bi bi-bar-chart-fill"></i> <span id="monthlyFaultTitle">Aylık Arıza Sayısı</span></div>
+                <div class="d-flex align-items-center gap-2">
+                    <label class="visually-hidden" for="faultYearSelect">Yıl</label>
+                    <select id="faultYearSelect" class="form-select form-select-sm" aria-label="Arıza grafiği yılı">
+                        <option>Yükleniyor…</option>
+                    </select>
+                    <label class="visually-hidden" for="faultMonthRangeSelect">Ay aralığı</label>
+                    <select id="faultMonthRangeSelect" class="form-select form-select-sm" aria-label="Arıza grafiği ay aralığı">
+                        <option value="6">6 Ay</option>
+                        <option value="12">12 Ay</option>
+                    </select>
+                </div>
+            </div>
             <div class="chart-wrap">
                 <canvas id="monthlyFaultChart"></canvas>
             </div>
@@ -96,47 +109,77 @@
 @section Scripts {
     <script src="~/lib/chart.js/chart.umd.js" asp-append-version="true"></script>
     <script>
-        async function loadCharts() {
+        let monthlyFaultChart;
+
+        async function getChartJson(url) {
+            const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+            if (!response.ok) {
+                throw new Error(`Grafik verisi alınamadı (${response.status}).`);
+            }
+            return response.json();
+        }
+
+        function showChartError(error) {
+            console.error('Dashboard grafikleri yüklenemedi.', error);
             const errorBox = document.getElementById('chartError');
+            errorBox.textContent = error.message || 'Dashboard grafikleri yüklenemedi.';
+            errorBox.classList.remove('d-none');
+        }
+
+        async function loadMonthlyFaultChart() {
+            const year = document.getElementById('faultYearSelect').value;
+            const months = document.getElementById('faultMonthRangeSelect').value;
+            const query = new URLSearchParams({ months, year });
+            const monthly = await getChartJson(`/api/charts/monthly-faults?${query}`);
+            document.getElementById('monthlyFaultTitle').textContent =
+                `Aylık Arıza Sayısı (${months} Ay · ${year})`;
+
+            const data = {
+                labels: monthly.map(item => item.month),
+                datasets: [{
+                    label: 'Arıza Sayısı',
+                    data: monthly.map(item => item.count),
+                    backgroundColor: '#4f46e5',
+                    borderRadius: 6,
+                    maxBarThickness: 38,
+                }]
+            };
+            if (monthlyFaultChart) {
+                monthlyFaultChart.data = data;
+                monthlyFaultChart.update();
+                return;
+            }
+            monthlyFaultChart = new Chart(document.getElementById('monthlyFaultChart'), {
+                type: 'bar',
+                data,
+                options: {
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#eef0f6' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        async function loadCharts() {
             try {
                 if (typeof Chart === 'undefined') {
                     throw new Error('Grafik kütüphanesi yüklenemedi.');
                 }
 
-                const getJson = async (url) => {
-                    const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
-                    if (!response.ok) {
-                        throw new Error(`Grafik verisi alınamadı (${response.status}).`);
-                    }
-                    return response.json();
-                };
-
-                const [monthly, types] = await Promise.all([
-                    getJson('/api/charts/monthly-faults'),
-                    getJson('/api/charts/fault-types'),
+                const [years, types] = await Promise.all([
+                    getChartJson('/api/charts/failure-years'),
+                    getChartJson('/api/charts/fault-types'),
                 ]);
-
-                new Chart(document.getElementById('monthlyFaultChart'), {
-                    type: 'bar',
-                    data: {
-                        labels: monthly.map(m => m.month),
-                        datasets: [{
-                            label: 'Arıza Sayısı',
-                            data: monthly.map(m => m.count),
-                            backgroundColor: '#4f46e5',
-                            borderRadius: 6,
-                            maxBarThickness: 38,
-                        }]
-                    },
-                    options: {
-                        maintainAspectRatio: false,
-                        plugins: { legend: { display: false } },
-                        scales: {
-                            y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#eef0f6' } },
-                            x: { grid: { display: false } }
-                        }
-                    }
-                });
+                const yearSelect = document.getElementById('faultYearSelect');
+                yearSelect.replaceChildren(...(years.length ? years : [new Date().getFullYear()])
+                    .map(year => new Option(year.toString(), year.toString())));
+                yearSelect.addEventListener('change', () => loadMonthlyFaultChart().catch(showChartError));
+                document.getElementById('faultMonthRangeSelect')
+                    .addEventListener('change', () => loadMonthlyFaultChart().catch(showChartError));
+                await loadMonthlyFaultChart();
 
                 new Chart(document.getElementById('faultTypeChart'), {
                     type: 'doughnut',
@@ -156,9 +199,7 @@
                     }
                 });
             } catch (error) {
-                console.error('Dashboard grafikleri yüklenemedi.', error);
-                errorBox.textContent = error.message || 'Dashboard grafikleri yüklenemedi.';
-                errorBox.classList.remove('d-none');
+                showChartError(error);
             }
         }
 

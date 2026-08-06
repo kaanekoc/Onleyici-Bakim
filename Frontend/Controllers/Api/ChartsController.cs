@@ -18,8 +18,20 @@ public class ChartsController : ControllerBase
     }
 
     [HttpGet("monthly-faults")]
-    public async Task<IActionResult> MonthlyFaults(CancellationToken cancellationToken) =>
-        Ok(await _data.GetMonthlyFaultTrendAsync(cancellationToken));
+    public async Task<IActionResult> MonthlyFaults(
+        [FromQuery] int months = 6,
+        [FromQuery] int? year = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (year is < 1900 or > 2200)
+            return ValidationProblem("Yıl 1900-2200 aralığında olmalıdır.");
+        months = months == 12 ? 12 : 6;
+        return Ok(await _data.GetMonthlyFaultTrendAsync(months, year, cancellationToken));
+    }
+
+    [HttpGet("failure-years")]
+    public async Task<IActionResult> FailureYears(CancellationToken cancellationToken) =>
+        Ok(await _data.GetFaultYearsAsync(cancellationToken));
 
     [HttpGet("fault-types")]
     public async Task<IActionResult> FaultTypes(CancellationToken cancellationToken) =>

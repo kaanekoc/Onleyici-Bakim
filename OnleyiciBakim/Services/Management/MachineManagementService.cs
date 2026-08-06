@@ -28,7 +28,8 @@ public sealed class MachineManagementService(
     BakimYonetimiDbContext dbContext,
     IRiskClassificationService riskClassificationService,
     IOptions<ErpIntegrationOptions> erpOptions,
-    ILogger<MachineManagementService> logger) : IMachineManagementService
+    ILogger<MachineManagementService> logger,
+    ILocalRiskAssessmentService? riskAssessmentService = null) : IMachineManagementService
 {
     public async Task<PagedResponse<ManagedMachineListItem>> GetAsync(
         ManagedMachineQuery request,
@@ -267,6 +268,7 @@ public sealed class MachineManagementService(
             VeriKaynagi = "Local"
         });
         await dbContext.SaveChangesAsync(cancellationToken);
+        await RecalculateRiskAsync(machineId, "Yeni makine oluşturuldu", cancellationToken);
         logger.LogInformation(
             "Entity=Machine Id={MachineId} Operation=Create Success=true At={At}",
             machineId, DateTimeOffset.UtcNow);
@@ -295,6 +297,7 @@ public sealed class MachineManagementService(
         if (request.LastMaintenanceDate.HasValue)
             machine.SonBakimTarihi = request.LastMaintenanceDate.Value.Date;
         await dbContext.SaveChangesAsync(cancellationToken);
+        await RecalculateRiskAsync(id, "Makine bilgileri güncellendi", cancellationToken);
         logger.LogInformation(
             "Entity=Machine Id={MachineId} Operation=Update Success=true At={At}",
             id, DateTimeOffset.UtcNow);
@@ -328,6 +331,7 @@ public sealed class MachineManagementService(
         var machine = await GetMutableMachineAsync(id, cancellationToken);
         machine.Durum = "Aktif";
         await dbContext.SaveChangesAsync(cancellationToken);
+        await RecalculateRiskAsync(id, "Makine yeniden aktifleştirildi", cancellationToken);
         logger.LogInformation(
             "Entity=Machine Id={MachineId} Operation=Activate Success=true At={At}",
             id, DateTimeOffset.UtcNow);
@@ -362,6 +366,27 @@ public sealed class MachineManagementService(
         if (!hierarchyValid)
             throw new DomainValidationException(
                 "Firma, şube, departman ve üretim hattı seçimi birbiriyle uyumlu değildir.");
+    }
+
+    private async Task RecalculateRiskAsync(
+        string machineId,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        if (riskAssessmentService is null)
+            return;
+        try
+        {
+            await riskAssessmentService.EvaluateMachineAsync(machineId, reason, cancellationToken);
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Ana veri kaydı başarılıysa geçici ML/analiz sorunu makine kaydını
+            // başarısız göstermesin; worker sonraki turda yeniden hesaplar.
+            logger.LogError(exception,
+                "Makine kaydedildi ancak ilk risk hesabı tamamlanamadı. MachineId={MachineId}",
+                machineId);
+        }
     }
 
     private async Task<Makineler> GetMutableMachineAsync(

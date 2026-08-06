@@ -65,7 +65,11 @@ public interface ILocalRiskAssessmentService
 
 public interface IDashboardService
 {
-    Task<DashboardResponse> GetAsync(int months, int riskyMachineCount, CancellationToken cancellationToken);
+    Task<DashboardResponse> GetAsync(
+        int months,
+        int riskyMachineCount,
+        int? year,
+        CancellationToken cancellationToken);
 }
 
 public interface IReportService
