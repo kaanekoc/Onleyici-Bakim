@@ -18,7 +18,7 @@ public partial class GuncelRiskler
     [StringLength(20)]
     public string MakineId { get; set; } = null!;
 
-    [Column(TypeName = "decimal(5, 1)")]
+    [Column(TypeName = "decimal(5, 2)")]
     public decimal RiskPuani { get; set; }
 
     [StringLength(20)]
@@ -45,10 +45,10 @@ public partial class GuncelRiskler
     [StringLength(50)]
     public string? VeriKaynagi { get; set; }
 
-    [Column(TypeName = "decimal(5, 1)")]
+    [Column(TypeName = "decimal(5, 2)")]
     public decimal? KuralPuani { get; set; }
 
-    [Column(TypeName = "decimal(5, 1)")]
+    [Column(TypeName = "decimal(5, 2)")]
     public decimal? IstatistikPuani { get; set; }
 
     [Column(TypeName = "decimal(6, 4)")]

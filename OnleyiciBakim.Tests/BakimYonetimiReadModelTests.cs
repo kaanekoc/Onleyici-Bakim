@@ -13,7 +13,15 @@ public sealed class BakimYonetimiReadModelTests
     {
         using var context = CreateContext();
 
-        Assert.Equal(33, context.Model.GetEntityTypes().Count());
+        Assert.Equal(44, context.Model.GetEntityTypes().Count());
+        Assert.NotNull(context.Model.FindEntityType(typeof(MakineSayacKayitlari)));
+        Assert.NotNull(context.Model.FindEntityType(typeof(MakineCalismaTakvimleri)));
+        Assert.NotNull(context.Model.FindEntityType(typeof(MakineTransferleri)));
+        Assert.NotNull(context.Model.FindEntityType(typeof(ArizaDegisenParcalar)));
+        Assert.NotNull(context.Model.FindEntityType(typeof(Ekipler)));
+        Assert.NotNull(context.Model.FindEntityType(typeof(IsEmriDurumGecmisi)));
+        Assert.NotNull(context.Model.FindEntityType(typeof(UyariIslemGecmisi)));
+        Assert.NotNull(context.Model.FindEntityType(typeof(BakimPlanDurumGecmisi)));
     }
 
     [Fact]

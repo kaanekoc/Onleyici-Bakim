@@ -24,6 +24,10 @@ public partial class Uyarilar
     [StringLength(20)]
     public string? RiskId { get; set; }
 
+    public int? AnalizId { get; set; }
+
+    [StringLength(20)] public string? PlanId { get; set; }
+
     [StringLength(20)]
     public string? UyariSeviyesi { get; set; }
 
@@ -46,6 +50,11 @@ public partial class Uyarilar
 
     [StringLength(50)]
     public string? VeriKaynagi { get; set; }
+
+    public DateTime? KapatmaTarihi { get; set; }
+    [StringLength(1000)] public string? KapatmaNedeni { get; set; }
+    [StringLength(20)] public string? IslemYapanPersonelId { get; set; }
+    [StringLength(100)] public string? IslemSonucu { get; set; }
 
     [ForeignKey("MakineId")]
     [InverseProperty("Uyarilar")]

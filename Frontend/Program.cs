@@ -6,6 +6,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllersWithViews();
 
 var useMockData = builder.Configuration.GetValue<bool>("Backend:UseMockData");
+var backendBaseUrl = builder.Configuration["Backend:BaseUrl"]
+    ?? throw new InvalidOperationException("Backend:BaseUrl yapılandırması bulunamadı.");
 if (useMockData)
 {
     if (!builder.Environment.IsDevelopment())
@@ -14,8 +16,6 @@ if (useMockData)
 }
 else
 {
-    var backendBaseUrl = builder.Configuration["Backend:BaseUrl"]
-        ?? throw new InvalidOperationException("Backend:BaseUrl yapılandırması bulunamadı.");
     builder.Services.AddHttpClient<IMaintenanceDataService, BackendMaintenanceDataService>(client =>
     {
         client.BaseAddress = new Uri(backendBaseUrl);
@@ -24,6 +24,26 @@ else
         client.Timeout = TimeSpan.FromSeconds(60);
     });
 }
+builder.Services.AddHttpClient<IMachineManagementClient, MachineManagementClient>(client =>
+{
+    client.BaseAddress = new Uri(backendBaseUrl);
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddHttpClient<ILocalDefinitionClient, LocalDefinitionClient>(client =>
+{
+    client.BaseAddress = new Uri(backendBaseUrl);
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddHttpClient<ILocalWorkflowClient, LocalWorkflowClient>(client =>
+{
+    client.BaseAddress = new Uri(backendBaseUrl);
+    client.Timeout = TimeSpan.FromSeconds(60);
+});
+builder.Services.AddHttpClient<ILocalReportClient, LocalReportClient>(client =>
+{
+    client.BaseAddress = new Uri(backendBaseUrl);
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
 
 var app = builder.Build();
 
@@ -49,3 +69,5 @@ app.MapControllerRoute(
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
 app.Run();
+
+public partial class Program;

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using OnleyiciBakim.Contracts.Risk;
 using OnleyiciBakim.Data;
+using OnleyiciBakim.Data.BakimYonetimi;
 using OnleyiciBakim.Options;
 using OnleyiciBakim.Services;
 
@@ -32,26 +33,45 @@ public sealed class RiskRecalculationWorker(
         try
         {
             await using var scope = scopeFactory.CreateAsyncScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var localRiskService = scope.ServiceProvider.GetService<ILocalRiskAssessmentService>();
+            IReadOnlyList<string> machineIds;
+            if (localRiskService is not null)
+            {
+                var localDb = scope.ServiceProvider.GetRequiredService<BakimYonetimiDbContext>();
+                machineIds = await localDb.Makineler.AsNoTracking()
+                    .Where(x => x.Aktif)
+                    .OrderBy(x => x.MakineId)
+                    .Select(x => x.MakineId)
+                    .Take(batchSize)
+                    .ToListAsync(cancellationToken);
+            }
+            else
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                machineIds = await dbContext.Machines.AsNoTracking()
+                    .Where(x => x.Status == "Aktif")
+                    .OrderBy(x => x.Id)
+                    .Select(x => x.Id)
+                    .Take(batchSize)
+                    .ToListAsync(cancellationToken);
+            }
             var riskService = scope.ServiceProvider.GetRequiredService<IRiskAssessmentService>();
-            var machineIds = await dbContext.Machines.AsNoTracking()
-                .Where(x => x.Status == "Aktif")
-                .OrderBy(x => x.Id)
-                .Select(x => x.Id)
-                .Take(batchSize)
-                .ToListAsync(cancellationToken);
             var runDate = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
             foreach (var machineId in machineIds)
             {
                 try
                 {
-                    await riskService.EvaluateMachineAsync(
-                        machineId,
-                        new EvaluateMachineRiskRequest
-                        {
-                            CorrelationId = $"auto-{runDate}-{machineId}"
-                        },
-                        cancellationToken);
+                    if (localRiskService is not null)
+                        await localRiskService.EvaluateMachineAsync(
+                            machineId, $"Zamanlanmış otomatik analiz {runDate}", cancellationToken);
+                    else
+                        await riskService.EvaluateMachineAsync(
+                            machineId,
+                            new EvaluateMachineRiskRequest
+                            {
+                                CorrelationId = $"auto-{runDate}-{machineId}"
+                            },
+                            cancellationToken);
                 }
                 catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
                 {

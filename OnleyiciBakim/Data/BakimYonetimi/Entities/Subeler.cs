@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace OnleyiciBakim.Data.BakimYonetimi.Entities;
 
 [Index("FirmaId", Name = "IX_Subeler_FirmaId")]
+[Index(nameof(FirmaId), nameof(SubeKodu), IsUnique = true, Name = "UQ_Subeler_FirmaKodu")]
 public partial class Subeler
 {
     [Key]
@@ -26,6 +27,11 @@ public partial class Subeler
 
     [StringLength(50)]
     public string? VeriKaynagi { get; set; }
+
+    [StringLength(500)] public string? Aciklama { get; set; }
+    public DateTime OlusturmaTarihi { get; set; }
+    public DateTime? GuncellemeTarihi { get; set; }
+    [Timestamp] public byte[] RowVersion { get; set; } = [];
 
     [InverseProperty("Sube")]
     public virtual ICollection<Departmanlar> Departmanlar { get; set; } = new List<Departmanlar>();

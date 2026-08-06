@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Diagnostics;
 using OnleyiciBakimSistemi.Models;
 
 namespace OnleyiciBakimSistemi.Controllers;
@@ -12,6 +13,8 @@ public class ErrorController : Controller
     [Route("{code:int}")]
     public IActionResult Index(int code)
     {
+        if (code is < 100 or > 599)
+            code = HttpContext.Features.Get<IStatusCodeReExecuteFeature>()?.OriginalStatusCode ?? 500;
         Response.StatusCode = code;
 
         var vm = new ErrorViewModel

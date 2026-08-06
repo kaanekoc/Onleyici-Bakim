@@ -23,11 +23,16 @@ public partial class RiskAnalizleri
 
     public int? KuralSetiId { get; set; }
 
+    public int? HibritSetId { get; set; }
+
     [Column(TypeName = "decimal(5, 2)")]
     public decimal? KuralPuani { get; set; }
 
-    [Column(TypeName = "decimal(5, 2)")]
+    [Column(TypeName = "decimal(6, 4)")]
     public decimal? MlOlasiligi { get; set; }
+
+    [Column(TypeName = "decimal(5, 2)")]
+    public decimal? AiRiskSkoru { get; set; }
 
     [StringLength(20)]
     public string? ModelVersiyonu { get; set; }
@@ -44,6 +49,20 @@ public partial class RiskAnalizleri
 
     [StringLength(20)]
     public string? VeriYeterliligi { get; set; }
+
+    [Column(TypeName = "decimal(5, 2)")]
+    public decimal? VeriTamlikOrani { get; set; }
+
+    [Column(TypeName = "decimal(5, 2)")]
+    public decimal? GuvenSeviyesi { get; set; }
+
+    public string? GirdiSnapshotJson { get; set; }
+
+    public string? UyarilarJson { get; set; }
+
+    [StringLength(200)] public string? HesaplamaNedeni { get; set; }
+
+    [StringLength(50)] public string VeriKaynagi { get; set; } = "LOCAL";
 
     public DateOnly? OnerilenBakimTarihi { get; set; }
 

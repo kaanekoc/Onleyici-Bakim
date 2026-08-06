@@ -51,6 +51,18 @@ public interface IRiskAssessmentService
         CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Teslim edilen yerel SQL Server şemasında analiz, güncel risk, uyarı ve planı
+/// aynı transaction içinde kalıcılaştıran çalışma servisi.
+/// </summary>
+public interface ILocalRiskAssessmentService
+{
+    Task<RiskAssessmentResponse> EvaluateMachineAsync(
+        string machineId,
+        string calculationReason,
+        CancellationToken cancellationToken);
+}
+
 public interface IDashboardService
 {
     Task<DashboardResponse> GetAsync(int months, int riskyMachineCount, CancellationToken cancellationToken);

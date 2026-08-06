@@ -18,6 +18,16 @@ public partial class BakimPlanlari
     [StringLength(20)]
     public string MakineId { get; set; } = null!;
 
+    public int? AnalizId { get; set; }
+
+    [StringLength(20)] public string? UyariId { get; set; }
+
+    public DateOnly? OnerilenTarih { get; set; }
+
+    public int? BakimTuruId { get; set; }
+
+    public int? SorumluEkipId { get; set; }
+
     [StringLength(20)]
     public string? BilesenKodu { get; set; }
 
@@ -34,7 +44,8 @@ public partial class BakimPlanlari
 
     public int TahminiSureDk { get; set; }
 
-    public int TahminiMaliyetTl { get; set; }
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal? TahminiMaliyetTl { get; set; }
 
     [StringLength(20)]
     public string? SorumluPersonelId { get; set; }
@@ -47,6 +58,13 @@ public partial class BakimPlanlari
 
     [StringLength(50)]
     public string? VeriKaynagi { get; set; }
+
+    [StringLength(30)] public string? OnayDurumu { get; set; }
+    [StringLength(20)] public string? OnaylayanPersonelId { get; set; }
+    public DateTime? OnayTarihi { get; set; }
+    public DateTime OlusturmaTarihi { get; set; }
+    public DateTime? GuncellemeTarihi { get; set; }
+    [Timestamp] public byte[] RowVersion { get; set; } = [];
 
     [InverseProperty("Plan")]
     public virtual ICollection<BakimPlanGorevleri> BakimPlanGorevleri { get; set; } = new List<BakimPlanGorevleri>();

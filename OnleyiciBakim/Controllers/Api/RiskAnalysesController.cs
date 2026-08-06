@@ -12,7 +12,8 @@ namespace OnleyiciBakim.Controllers.Api;
 [Route("api/v1/risk-analyses")]
 public sealed class RiskAnalysesController(
     ApplicationDbContext dbContext,
-    IRiskAssessmentService riskAssessmentService) : ControllerBase
+    IRiskAssessmentService riskAssessmentService,
+    ILocalRiskAssessmentService? localRiskAssessmentService = null) : ControllerBase
 {
     [HttpPost("machines/{machineId}")]
     [ProducesResponseType<RiskAssessmentResponse>(StatusCodes.Status201Created)]
@@ -24,6 +25,20 @@ public sealed class RiskAnalysesController(
         var result = await riskAssessmentService.EvaluateMachineAsync(
             machineId, request, cancellationToken);
         return CreatedAtAction(nameof(Get), new { id = result.Id }, result);
+    }
+
+    [HttpPost("local-machines/{machineId}")]
+    [ProducesResponseType<RiskAssessmentResponse>(StatusCodes.Status201Created)]
+    public async Task<ActionResult<RiskAssessmentResponse>> AnalyzeLocalMachine(
+        string machineId,
+        [FromQuery] string reason = "Yönetici yeniden hesaplama isteği",
+        CancellationToken cancellationToken = default)
+    {
+        if (localRiskAssessmentService is null)
+            throw new DomainValidationException("Yerel SQL Server risk servisi etkin değildir.");
+        var result = await localRiskAssessmentService.EvaluateMachineAsync(
+            machineId, reason, cancellationToken);
+        return StatusCode(StatusCodes.Status201Created, result);
     }
 
     [HttpPost("bulk")]

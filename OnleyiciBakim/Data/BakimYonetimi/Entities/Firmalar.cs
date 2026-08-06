@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace OnleyiciBakim.Data.BakimYonetimi.Entities;
 
+[Index(nameof(FirmaKodu), IsUnique = true, Name = "UQ_Firmalar_FirmaKodu")]
 public partial class Firmalar
 {
     [Key]
@@ -22,6 +23,11 @@ public partial class Firmalar
 
     [StringLength(50)]
     public string? VeriKaynagi { get; set; }
+
+    [StringLength(500)] public string? Aciklama { get; set; }
+    public DateTime OlusturmaTarihi { get; set; }
+    public DateTime? GuncellemeTarihi { get; set; }
+    [Timestamp] public byte[] RowVersion { get; set; } = [];
 
     [InverseProperty("Firma")]
     public virtual ICollection<Makineler> Makineler { get; set; } = new List<Makineler>();

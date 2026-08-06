@@ -180,6 +180,7 @@ public sealed class ApiIntegrationTests
                     ["MlService:UseMock"] = environment == "Production" ? "false" : "true",
                     ["Erp:UseMock"] = environment == "Production" ? "false" : "true",
                     ["Erp:EnableBackgroundSync"] = "false",
+                    ["RiskAutomation:Enabled"] = "false",
                     ["ConnectionStrings:PostgreSql"] =
                         "Host=localhost;Port=5432;Database=test;Username=test;Password=test"
                 });

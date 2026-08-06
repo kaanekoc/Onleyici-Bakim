@@ -47,6 +47,9 @@ public sealed class MaintenanceController(
                 x.Priority,
                 x.Status.ToString(),
                 x.ModelConfidence,
+                x.RiskAssessment != null
+                    ? x.RiskAssessment.HybridScore
+                    : x.Machine.CurrentRiskScore,
                 x.Recommendation,
                 x.Justification,
                 x.ResponsiblePersonnel != null ? x.ResponsiblePersonnel.FullName : null,

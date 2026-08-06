@@ -111,6 +111,7 @@ public sealed class BackendMaintenanceDataService(
             MachineName = x.MachineName,
             PlannedDate = x.PlannedAt.LocalDateTime,
             Type = x.MaintenanceType,
+            PredictedRiskScore = x.RiskScore,
             Confidence = NormalizePercentage(x.ModelConfidence),
             Status = TranslateStatus(x.Status),
             RecommendedAction = x.Recommendation ?? string.Empty
@@ -236,6 +237,7 @@ public sealed class BackendMaintenanceDataService(
     private sealed record MaintenanceApiItem(
         string Id, string MachineId, string MachineName, DateTimeOffset PlannedAt,
         string MaintenanceType, string Priority, string Status, decimal? ModelConfidence,
+        decimal RiskScore,
         string? Recommendation);
     private sealed record DashboardApiItem(
         int TotalMachines,

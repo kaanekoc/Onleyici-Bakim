@@ -11,4 +11,13 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     });
   }
+
+  document.querySelectorAll(".sidebar-nav .nav-group").forEach(function (group) {
+    group.addEventListener("toggle", function () {
+      if (!group.open) return;
+      document.querySelectorAll(".sidebar-nav .nav-group[open]").forEach(function (other) {
+        if (other !== group) other.open = false;
+      });
+    });
+  });
 });

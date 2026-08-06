@@ -20,6 +20,10 @@ public partial class BakimKayitlari
     [StringLength(20)]
     public string MakineId { get; set; } = null!;
 
+    [StringLength(20)] public string? PlanId { get; set; }
+
+    public int? BakimTuruId { get; set; }
+
     [StringLength(20)]
     public string? BilesenKodu { get; set; }
 
@@ -43,9 +47,10 @@ public partial class BakimKayitlari
     [StringLength(20)]
     public string? PersonelId { get; set; }
 
-    public DateTime SonrakiBakimTarihi { get; set; }
+    public DateTime? SonrakiBakimTarihi { get; set; }
 
-    public int MaliyetTl { get; set; }
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal? MaliyetTl { get; set; }
 
     [StringLength(20)]
     public string? BagliArizaId { get; set; }
@@ -55,6 +60,13 @@ public partial class BakimKayitlari
 
     [StringLength(50)]
     public string? VeriKaynagi { get; set; }
+
+    public DateTime? BaslangicTarihi { get; set; }
+    public DateTime? BitisTarihi { get; set; }
+    [StringLength(30)] public string? KaynakTuru { get; set; }
+    [StringLength(50)] public string? MakineSonrasiDurum { get; set; }
+    public int? KontrolListesiId { get; set; }
+    public DateTime OlusturmaTarihi { get; set; }
 
     [ForeignKey("BagliArizaId")]
     [InverseProperty("BakimKayitlari")]

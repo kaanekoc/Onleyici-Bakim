@@ -82,7 +82,7 @@ public sealed class BakimYonetimiDataController(
             BakimYonetimiDashboardService.ToUtc(x.SonBakimTarihi),
             BakimYonetimiDashboardService.ToUtc(x.NextMaintenanceAt),
             x.TotalFailureCount,
-            PresentRisk(x.GuncelRiskPuani))).ToArray();
+            PresentRisk(x.GuncelRiskPuani ?? 0m))).ToArray();
 
         return Ok(new PagedResponse<MachineListItemResponse>(
             items, request.Page, request.PageSize, total));
@@ -136,7 +136,7 @@ public sealed class BakimYonetimiDataController(
             BakimYonetimiDashboardService.ToUtc(row.SonBakimTarihi),
             BakimYonetimiDashboardService.ToUtc(row.NextMaintenanceAt),
             row.TotalFailureCount,
-            PresentRisk(row.GuncelRiskPuani),
+            PresentRisk(row.GuncelRiskPuani ?? 0m),
             [],
             []));
     }
@@ -195,7 +195,7 @@ public sealed class BakimYonetimiDataController(
             x.MachineName ?? x.MakineId,
             x.ArizaTuru ?? "Belirtilmemiş",
             x.OnemSeviyesi ?? "Belirtilmemiş",
-            Math.Round(x.DurusSuresiDk / 60m, 1),
+            Math.Round((x.DurusSuresiDk ?? 0) / 60m, 1),
             x.Technician,
             x.Durum ?? "Bilinmiyor",
             x.KokNeden,
@@ -248,6 +248,10 @@ public sealed class BakimYonetimiDataController(
                     .OrderByDescending(risk => risk.DegerlendirmeTarihi)
                     .Select(risk => (DateTime?)risk.DegerlendirmeTarihi)
                     .FirstOrDefault(),
+                RiskScore = dbContext.RiskAnalizleri
+                    .Where(risk => risk.AnalizId == x.AnalizId)
+                    .Select(risk => (decimal?)risk.NihaiPuan)
+                    .FirstOrDefault() ?? x.Makine.GuncelRiskPuani ?? 0m,
                 Responsible = x.SorumluPersonel != null ? x.SorumluPersonel.AdSoyad : null,
                 WorkOrder = x.IsEmirleri.OrderByDescending(order => order.OlusturmaTarihi)
                     .Select(order => order.IsEmriNo).FirstOrDefault()
@@ -273,6 +277,7 @@ public sealed class BakimYonetimiDataController(
             x.Durum ?? "Bilinmiyor",
             ToModelConfidence(x.MlProbability) ??
                 liveConfidences.GetValueOrDefault(x.MakineId),
+            x.RiskScore,
             x.Gerekce,
             x.Gerekce,
             x.Responsible,

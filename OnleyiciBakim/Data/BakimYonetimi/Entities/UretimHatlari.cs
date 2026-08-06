@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace OnleyiciBakim.Data.BakimYonetimi.Entities;
 
 [Index("DepartmanId", Name = "IX_UretimHatlari_DepartmanId")]
+[Index(nameof(DepartmanId), nameof(HatKodu), IsUnique = true, Name = "UQ_UretimHatlari_DepartmanKodu")]
 public partial class UretimHatlari
 {
     [Key]
@@ -28,6 +29,11 @@ public partial class UretimHatlari
 
     [StringLength(50)]
     public string? VeriKaynagi { get; set; }
+
+    [StringLength(500)] public string? Aciklama { get; set; }
+    public DateTime OlusturmaTarihi { get; set; }
+    public DateTime? GuncellemeTarihi { get; set; }
+    [Timestamp] public byte[] RowVersion { get; set; } = [];
 
     [ForeignKey("DepartmanId")]
     [InverseProperty("UretimHatlari")]

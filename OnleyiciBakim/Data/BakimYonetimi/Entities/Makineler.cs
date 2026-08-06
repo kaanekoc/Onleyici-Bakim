@@ -16,7 +16,7 @@ public partial class Makineler
     [StringLength(20)]
     public string MakineId { get; set; } = null!;
 
-    public int KaynakMakineId { get; set; }
+    public int? KaynakMakineId { get; set; }
 
     [StringLength(20)]
     public string FirmaId { get; set; } = null!;
@@ -31,13 +31,22 @@ public partial class Makineler
     public string HatId { get; set; } = null!;
 
     [StringLength(50)]
-    public string? MakineKodu { get; set; }
+    public string MakineKodu { get; set; } = null!;
 
     [StringLength(200)]
-    public string? MakineAdi { get; set; }
+    public string MakineAdi { get; set; } = null!;
+
+    [StringLength(100)]
+    public string? MakineTuru { get; set; }
+
+    [StringLength(100)]
+    public string? Marka { get; set; }
 
     [StringLength(50)]
     public string? Model { get; set; }
+
+    [StringLength(100)]
+    public string? SeriNo { get; set; }
 
     public int Yas { get; set; }
 
@@ -46,21 +55,44 @@ public partial class Makineler
 
     public int KurulumYili { get; set; }
 
+    public DateOnly? KurulumTarihi { get; set; }
+
     [StringLength(30)]
     public string? Durum { get; set; }
 
-    public DateTime SonBakimTarihi { get; set; }
+    public DateTime? SonBakimTarihi { get; set; }
 
     public DateTime? SonArizaTarihi { get; set; }
 
-    [Column(TypeName = "decimal(5, 1)")]
-    public decimal GuncelRiskPuani { get; set; }
+    [Column(TypeName = "decimal(5, 2)")]
+    public decimal? GuncelRiskPuani { get; set; }
 
     [StringLength(20)]
     public string? GuncelRiskSeviyesi { get; set; }
 
     [StringLength(50)]
     public string? VeriKaynagi { get; set; }
+
+    [StringLength(50)]
+    public string? PeriyotTuru { get; set; }
+
+    [Column(TypeName = "decimal(12, 2)")]
+    public decimal? PeriyotDegeri { get; set; }
+
+    [StringLength(30)]
+    public string? PeriyotBirimi { get; set; }
+
+    public bool Aktif { get; set; } = true;
+
+    [StringLength(1000)]
+    public string? Aciklama { get; set; }
+
+    public DateTime OlusturmaTarihi { get; set; }
+
+    public DateTime? GuncellemeTarihi { get; set; }
+
+    [Timestamp]
+    public byte[] RowVersion { get; set; } = [];
 
     [InverseProperty("Makine")]
     public virtual ICollection<ArizaKartlari> ArizaKartlari { get; set; } = new List<ArizaKartlari>();

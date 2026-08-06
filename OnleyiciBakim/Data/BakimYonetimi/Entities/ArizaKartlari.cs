@@ -19,6 +19,10 @@ public partial class ArizaKartlari
     [StringLength(20)]
     public string MakineId { get; set; } = null!;
 
+    public int? ArizaKoduId { get; set; }
+
+    public int? VardiyaId { get; set; }
+
     [StringLength(20)]
     public string? BilesenKodu { get; set; }
 
@@ -35,11 +39,11 @@ public partial class ArizaKartlari
 
     public bool PlanliDurusMu { get; set; }
 
-    public int IlkMudahaleDk { get; set; }
+    public int? IlkMudahaleDk { get; set; }
 
-    public int MudahaleSuresiDk { get; set; }
+    public int? MudahaleSuresiDk { get; set; }
 
-    public int DurusSuresiDk { get; set; }
+    public int? DurusSuresiDk { get; set; }
 
     [StringLength(30)]
     public string? Durum { get; set; }
@@ -56,10 +60,25 @@ public partial class ArizaKartlari
     [StringLength(50)]
     public string? IsEmriNo { get; set; }
 
-    public int TahminiMaliyetTl { get; set; }
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal? TahminiMaliyetTl { get; set; }
 
     [StringLength(50)]
     public string? VeriKaynagi { get; set; }
+
+    [StringLength(100)] public string? UrunStokKodu { get; set; }
+    [StringLength(1000)] public string? IlkBelirti { get; set; }
+    public bool UretimDurduMu { get; set; }
+    public int? TahminiDurusSuresiDk { get; set; }
+    [StringLength(20)] public string? BildirenPersonelId { get; set; }
+    public DateTime? ArizaBitisTarihi { get; set; }
+    [Column(TypeName = "decimal(18,3)")] public decimal? UretimKaybiMiktari { get; set; }
+    [StringLength(30)] public string? UretimKaybiBirimi { get; set; }
+    public bool Aktif { get; set; } = true;
+    [StringLength(20)] public string? KapanisPersonelId { get; set; }
+    public DateTime? KapanisTarihi { get; set; }
+    [StringLength(2000)] public string? CozumAciklamasi { get; set; }
+    public DateTime OlusturmaTarihi { get; set; }
 
     [InverseProperty("Ariza")]
     public virtual ICollection<ArizaMudahaleler> ArizaMudahaleler { get; set; } = new List<ArizaMudahaleler>();

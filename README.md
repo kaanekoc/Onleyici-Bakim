@@ -1,8 +1,9 @@
 # Önleyici Bakım Sistemi
 
-ASP.NET Core 8 tabanlı çözüm; merkezi `BakimYonetimiDb` SQL Server şemasını salt-okunur ekran
-modeli olarak, mevcut PostgreSQL/InMemory iş akışı altyapısını da komut modeli olarak kullanır.
-ERP ve ML tahmin servisi adaptörleri ile MVC frontend aynı çözüm içindedir.
+ASP.NET Core 8 tabanlı çözüm; merkezi `BakimYonetimiDb` SQL Server şemasını normal kullanıcı
+akışlarında hem okuma hem yazma modeli olarak kullanır. ERP kapalıdır ve menüde gösterilmez;
+mevcut ERP kolonları gelecekte kullanım için korunmuştur. Python ML servisi veritabanına
+bağlanmaz, yalnızca backend'in ürettiği 20 özellik üzerinden tahmin verir.
 
 ## Projeler
 
@@ -18,6 +19,8 @@ HTTP örnekleri: [OnleyiciBakim.http](OnleyiciBakim.http)
 
 ## Hızlı başlangıç
 
+Her şema güncellemesinden önce SQL Server yedeği alın. Bu teslimde doğrulanmış geri dönüş
+noktası `C:\Users\Kaan\Downloads\BakimYonetimiDb_before_20260805.bak` dosyasıdır.
 İlk kurulumda gönderilen en güncel yedeği LocalDB'ye geri yükleyin:
 
 ```powershell
@@ -25,8 +28,23 @@ HTTP örnekleri: [OnleyiciBakim.http](OnleyiciBakim.http)
 ```
 
 Betik mevcut bir `BakimYonetimiDb` üzerine yazmaz. Bilinçli yenileme gerekiyorsa `-Replace`
-kullanılabilir. Ardından Development profili SQL Server ekran modelini, gerçek yerel ML HTTP
-servisini ve Development-only ERP mock'unu birlikte kullanır:
+kullanılabilir. Yedeğin ardından idempotent tamamlama scriptini uygulayın; script veritabanı
+veya iş tablosu silmez ve tekrar çalıştırılabilir:
+
+```powershell
+sqlcmd -S "(localdb)\MSSQLLocalDB" -d BakimYonetimiDb -E -b -f 65001 `
+  -i .\scripts\20260805_PreventiveMaintenanceCompletion.sql
+```
+
+SQL betiği daha önce `-f 65001` olmadan çalıştırıldıysa Türkçe metinleri ve bu metinleri
+kullanan veritabanı nesnelerini bir kez onarın:
+
+```powershell
+sqlcmd -S "(localdb)\MSSQLLocalDB" -d BakimYonetimiDb -E -b -f 65001 `
+  -i .\scripts\20260806_RepairTurkishText.sql
+```
+
+Ardından Development profili yerel SQL Server ve gerçek yerel ML HTTP servisini kullanır:
 
 ```powershell
 dotnet restore .\OnleyiciBakim.sln
@@ -63,23 +81,14 @@ Frontend: `http://localhost:5080`
 
 ## Veritabanı çalışma biçimi
 
-- `BakimYonetimiDbContext`, teslim edilen 33 iş tablosunu ve ilişkilerini birebir eşler.
-- Dashboard, makine, arıza ve bakım planı ekranları gerçek SQL Server yedeğini okur.
+- `BakimYonetimiDbContext`, 44 iş tablosunu ve ilişkilerini Database First + güvenli manuel
+  SQL yaklaşımıyla eşler.
+- Dashboard, tanımlar, makineler, sayaçlar, arıza/bakım/uyarı/iş emri akışları ve raporlar
+  gerçek SQL Server verisini okur ve yazar.
 - Kaynak şema uygulama başlangıcında değiştirilmez; migration veya `EnsureCreated` çalıştırılmaz.
-- Tarihsel örnek veri 2015'te bittiği için aylık grafik, boş görünmek yerine veri setinin son ayına
-  göre son altı ayı gösterir.
-
-PostgreSQL komut modeli Production/entegrasyon ortamında ayrıca yapılandırılabilir:
-
-Production/entegrasyon ortamında:
-
-```powershell
-$env:Database__Provider="PostgreSql"
-$env:ConnectionStrings__PostgreSql="Host=...;Port=5432;Database=...;Username=...;Password=..."
-```
-
-Uygulama başlangıçta migration veya destructive veritabanı işlemi çalıştırmaz. Nihai DDL/migration
-veritabanı ekibinden uygulanmalıdır.
+- Yeni yerel iş kayıtlarında `VeriKaynagi = "LOCAL"` kullanılır. Eski PostgreSQL komut modeli
+  uyumluluk amacıyla kodda tutulur ancak MVC'nin normal bakım yönetimi akışında kullanılmaz.
+- Uygulama başlangıçta destructive veritabanı işlemi çalıştırmaz.
 
 ## Kesin risk kuralı
 

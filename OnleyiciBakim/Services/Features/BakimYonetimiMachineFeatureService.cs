@@ -16,9 +16,10 @@ public sealed class BakimYonetimiMachineFeatureService(
         DateTime calculationDate,
         CancellationToken cancellationToken = default)
     {
-        var at = calculationDate.Kind == DateTimeKind.Utc
+        var requestedAt = calculationDate.Kind == DateTimeKind.Utc
             ? calculationDate
             : calculationDate.ToUniversalTime();
+        var at = await ResolveDataDateAsync(requestedAt, cancellationToken);
         var ago7 = at.AddDays(-7);
         var ago30 = at.AddDays(-30);
         var ago90 = at.AddDays(-90);
@@ -27,7 +28,7 @@ public sealed class BakimYonetimiMachineFeatureService(
             .Where(x => x.MakineId == machineId)
             .Select(x => new
             {
-                x.MakineId, x.Yas, x.KurulumYili, x.Model, x.KritikSeviye,
+                x.MakineId, x.Yas, x.KurulumYili, x.KurulumTarihi, x.Model, x.KritikSeviye,
                 x.SonBakimTarihi
             })
             .FirstOrDefaultAsync(cancellationToken)
@@ -47,9 +48,12 @@ public sealed class BakimYonetimiMachineFeatureService(
                 Count90 = group.Count()
             })
             .FirstOrDefaultAsync(cancellationToken);
-        var mandatoryOverdue = await dbContext.BakimKayitlari.AsNoTracking()
-            .AnyAsync(x => x.MakineId == machineId && x.SonrakiBakimTarihi < at,
-                cancellationToken);
+        var latestNextMaintenance = await dbContext.BakimKayitlari.AsNoTracking()
+            .Where(x => x.MakineId == machineId && x.BakimTarihi <= at)
+            .OrderByDescending(x => x.BakimTarihi)
+            .Select(x => x.SonrakiBakimTarihi)
+            .FirstOrDefaultAsync(cancellationToken);
+        var mandatoryOverdue = latestNextMaintenance.HasValue && latestNextMaintenance.Value < at;
 
         var failureWindow = dbContext.ArizaKartlari.AsNoTracking()
             .Where(x => x.MakineId == machineId && x.ArizaTarihi > ago90 && x.ArizaTarihi <= at);
@@ -100,7 +104,13 @@ public sealed class BakimYonetimiMachineFeatureService(
             })
             .FirstOrDefaultAsync(cancellationToken);
 
-        var age = machine.Yas >= 0 ? machine.Yas : Math.Max(0, at.Year - machine.KurulumYili);
+        var age = machine.KurulumTarihi.HasValue
+            ? Math.Max(0, at.Year - machine.KurulumTarihi.Value.Year -
+                (DateOnly.FromDateTime(at) < machine.KurulumTarihi.Value.AddYears(
+                    Math.Max(0, at.Year - machine.KurulumTarihi.Value.Year)) ? 1 : 0))
+            : machine.KurulumYili is >= 1900 and <= 2200
+                ? Math.Max(0, at.Year - machine.KurulumYili)
+                : Math.Max(0, machine.Yas);
         return new MachineFeatureDto
         {
             MachineId = machine.MakineId,
@@ -134,4 +144,29 @@ public sealed class BakimYonetimiMachineFeatureService(
 
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private async Task<DateTime> ResolveDataDateAsync(
+        DateTime requestedAt,
+        CancellationToken cancellationToken)
+    {
+        var latestMaintenance = await dbContext.BakimKayitlari.AsNoTracking()
+            .MaxAsync(x => (DateTime?)x.BakimTarihi, cancellationToken);
+        var latestFailure = await dbContext.ArizaKartlari.AsNoTracking()
+            .MaxAsync(x => (DateTime?)x.ArizaTarihi, cancellationToken);
+        var latestError = await dbContext.HataKayitlari.AsNoTracking()
+            .MaxAsync(x => (DateTime?)x.HataTarihi, cancellationToken);
+        var latestTelemetry = await dbContext.TelemetriGunluk.AsNoTracking()
+            .MaxAsync(x => (DateTime?)x.Tarih, cancellationToken);
+        var latestObservation = new DateTime?[]
+        {
+            latestMaintenance, latestFailure, latestError, latestTelemetry
+        }.Max();
+
+        // Teslim edilen SQL veri seti tarihsel bir anlık görüntüdür. Veri kümesinin
+        // tamamı 90 günlük özellik penceresinin dışındaysa hesaplamayı son gözleme
+        // sabitle; canlı veri bulunan ortamlarda istenen güncel tarih kullanılmaya devam eder.
+        return latestObservation.HasValue && latestObservation.Value < requestedAt.AddDays(-90)
+            ? latestObservation.Value
+            : requestedAt;
+    }
 }

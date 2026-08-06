@@ -18,9 +18,13 @@ public partial class BakimOneriParametreleri
     [StringLength(20)]
     public string RiskSeviyesi { get; set; } = null!;
 
-    public int MinPuan { get; set; }
+    [Column(TypeName = "decimal(5, 2)")]
+    public decimal MinPuan { get; set; }
 
-    public int MaxPuan { get; set; }
+    [Column(TypeName = "decimal(5, 2)")]
+    public decimal MaxPuan { get; set; }
+
+    public bool MaxDahil { get; set; }
 
     public int OnerilenGun { get; set; }
 
@@ -39,6 +43,11 @@ public partial class BakimOneriParametreleri
     public bool GerekceZorunlu { get; set; }
 
     public bool BildirimGoster { get; set; }
+
+    public bool IslemGerekmiyorSecenegi { get; set; }
+
+    [StringLength(50)]
+    public string? VarsayilanKarar { get; set; }
 
     [StringLength(50)]
     public string? SorumluRol { get; set; }

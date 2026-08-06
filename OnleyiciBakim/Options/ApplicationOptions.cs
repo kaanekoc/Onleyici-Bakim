@@ -67,6 +67,14 @@ public sealed class ErpOptions
     public int OutboxPollingSeconds { get; set; } = 30;
 }
 
+public sealed class ErpIntegrationOptions
+{
+    public const string SectionName = "ErpIntegration";
+
+    public bool Enabled { get; set; }
+    public bool UseErpAsMasterSource { get; set; }
+}
+
 public sealed class DatabaseOptions
 {
     public const string SectionName = "Database";

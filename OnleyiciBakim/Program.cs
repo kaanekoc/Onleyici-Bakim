@@ -13,6 +13,7 @@ using OnleyiciBakim.Options;
 using OnleyiciBakim.Services;
 using OnleyiciBakim.BackgroundJobs;
 using OnleyiciBakim.Services.Features;
+using OnleyiciBakim.Services.Management;
 using OnleyiciBakim.Services.Risk;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -71,6 +72,8 @@ builder.Services.AddOptions<ErpOptions>()
     .Bind(builder.Configuration.GetSection(ErpOptions.SectionName))
     .Validate(x => x.TimeoutSeconds is > 0 and <= 300, "ERP timeout 1-300 saniye olmalıdır.")
     .ValidateOnStart();
+builder.Services.Configure<ErpIntegrationOptions>(
+    builder.Configuration.GetSection(ErpIntegrationOptions.SectionName));
 builder.Services.Configure<DatabaseOptions>(
     builder.Configuration.GetSection(DatabaseOptions.SectionName));
 builder.Services.Configure<IntegrationOptions>(
@@ -112,9 +115,11 @@ if (useBakimYonetimiReadModel)
     var bakimYonetimiConnection = builder.Configuration.GetConnectionString("BakimYonetimiSqlServer")
         ?? throw new InvalidOperationException(
             "ConnectionStrings:BakimYonetimiSqlServer yapılandırması bulunamadı.");
+    // İş akışları açık transaction kullandığı için bu context üzerinde otomatik
+    // retry stratejisi kullanılmaz; başarısız transaction tamamı geri alınır ve
+    // çağrı güvenli/idempotent iş akışı katmanından yeniden denenebilir.
     builder.Services.AddDbContextFactory<BakimYonetimiDbContext>(options =>
-        options.UseSqlServer(bakimYonetimiConnection, sqlServer =>
-            sqlServer.EnableRetryOnFailure(3, TimeSpan.FromSeconds(5), null)));
+        options.UseSqlServer(bakimYonetimiConnection));
 }
 
 builder.Services.AddCors(options =>
@@ -175,12 +180,18 @@ builder.Services.AddScoped<IAlgorithmicRiskCalculator, AlgorithmicRiskCalculator
 builder.Services.AddScoped<IHybridRiskCalculator, HybridRiskCalculator>();
 builder.Services.AddScoped<IRuleBasedRiskService, RuleBasedRiskService>();
 builder.Services.AddScoped<IHybridRiskService, HybridRiskService>();
+builder.Services.AddScoped<OnleyiciBakim.Services.Management.ILocalDefinitionService,
+    OnleyiciBakim.Services.Management.LocalDefinitionService>();
+builder.Services.AddScoped<OnleyiciBakim.Services.Management.ILocalWorkflowService,
+    OnleyiciBakim.Services.Management.LocalWorkflowService>();
 builder.Services.AddScoped<MachineFeatureService>();
 if (useBakimYonetimiReadModel)
 {
     builder.Services.AddScoped<BakimYonetimiMachineFeatureService>();
     builder.Services.AddScoped<IMachineFeatureService, CompositeMachineFeatureService>();
     builder.Services.AddScoped<IReadModelMlConfidenceService, ReadModelMlConfidenceService>();
+    builder.Services.AddScoped<IMachineManagementService, MachineManagementService>();
+    builder.Services.AddScoped<ILocalRiskAssessmentService, LocalRiskAssessmentService>();
 }
 else
     builder.Services.AddScoped<IMachineFeatureService, MachineFeatureService>();
@@ -189,7 +200,10 @@ if (useBakimYonetimiReadModel)
     builder.Services.AddScoped<IDashboardService, BakimYonetimiDashboardService>();
 else
     builder.Services.AddScoped<IDashboardService, DashboardService>();
-builder.Services.AddScoped<IReportService, ReportService>();
+if (useBakimYonetimiReadModel)
+    builder.Services.AddScoped<IReportService, BakimYonetimiReportService>();
+else
+    builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddScoped<IIntegrationService, IntegrationService>();
 builder.Services.AddScoped<IDevTestService, DevTestService>();
 builder.Services.AddSingleton<IWorkflowTransitionService, WorkflowTransitionService>();

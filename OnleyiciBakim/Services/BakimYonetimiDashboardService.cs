@@ -83,7 +83,7 @@ public sealed class BakimYonetimiDashboardService(
         var riskDistribution = Enum.GetValues<RiskLevel>()
             .Select(level => new CategoryCount(
                 classificationService.GetLabel(level),
-                scoreBands.Count(score => classificationService.Classify(score) == level)))
+                scoreBands.Count(score => classificationService.Classify(score ?? 0m) == level)))
             .ToArray();
 
         var topRows = await dbContext.Makineler.AsNoTracking()
@@ -106,14 +106,14 @@ public sealed class BakimYonetimiDashboardService(
 
         var riskiest = topRows.Select(x =>
         {
-            var level = classificationService.Classify(x.GuncelRiskPuani);
+            var level = classificationService.Classify(x.GuncelRiskPuani ?? 0m);
             return new RiskiestMachineResponse(
                 x.MakineId,
                 x.MakineKodu ?? x.MakineId,
                 x.MakineAdi ?? x.MakineId,
                 x.Location,
                 ToUtc(x.NextMaintenanceAt),
-                PresentRisk(x.GuncelRiskPuani, level));
+                PresentRisk(x.GuncelRiskPuani ?? 0m, level));
         }).ToArray();
 
         return new DashboardResponse(

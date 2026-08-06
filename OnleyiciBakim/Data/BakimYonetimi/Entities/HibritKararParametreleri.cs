@@ -41,6 +41,8 @@ public partial class HibritKararParametreleri
 
     public int? UyumsuzlukEsigi { get; set; }
 
+    public bool BuyukFarktaEngelle { get; set; }
+
     public bool ManuelIncelemeGerekli { get; set; }
 
     public bool OtomatikPlanTaslagi { get; set; }

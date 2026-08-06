@@ -24,10 +24,17 @@ public partial class BakimKontrolListeleri
     [StringLength(20)]
     public string? BakimTuruKodu { get; set; }
 
+    [StringLength(100)]
+    public string? MakineTuru { get; set; }
+
     public bool Aktif { get; set; }
 
     [StringLength(500)]
     public string? Aciklama { get; set; }
+
+    public DateTime OlusturmaTarihi { get; set; }
+
+    public DateTime? GuncellemeTarihi { get; set; }
 
     [ForeignKey("BakimTuruKodu")]
     [InverseProperty("BakimKontrolListeleri")]

@@ -79,6 +79,7 @@ public sealed record MaintenancePlanResponse(
     string Priority,
     string Status,
     decimal? ModelConfidence,
+    decimal RiskScore,
     string? Recommendation,
     string? Justification,
     string? ResponsiblePersonnel,
