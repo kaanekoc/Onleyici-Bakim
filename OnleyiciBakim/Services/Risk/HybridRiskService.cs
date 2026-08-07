@@ -38,20 +38,24 @@ public sealed class HybridRiskService(IOptions<HybridRiskOptions> options) : IHy
             boundedAi * aiWeight + boundedRule * ruleWeight, 0m, 100m);
         var finalScore = weightedScore;
         var overrides = new List<string>();
-        if (features.HasCriticalTelemetry && finalScore < 80m)
+        if (features.IsMandatoryMaintenanceOverdue)
         {
-            finalScore = 80m;
-            overrides.Add("Kritik telemetri eşiği aşıldı; nihai skor en az 80 yapıldı.");
+            finalScore = ElevateIntoRiskBand(weightedScore, 60m);
+            overrides.Add("Zorunlu bakım tarihi geçti; nihai skor yüksek risk bandına oransal olarak yükseltildi.");
         }
-        if (features.IsMandatoryMaintenanceOverdue && finalScore < 60m)
+
+        var hasCriticalOverride = features.HasCriticalTelemetry ||
+                                  features.HasRepeatedCriticalFailure7Days;
+        if (hasCriticalOverride)
+            finalScore = ElevateIntoRiskBand(weightedScore, 80m);
+
+        if (features.HasCriticalTelemetry)
         {
-            finalScore = 60m;
-            overrides.Add("Zorunlu bakım tarihi geçti; nihai skor en az 60 yapıldı.");
+            overrides.Add("Kritik telemetri eşiği aşıldı; nihai skor kritik banda oransal olarak yükseltildi.");
         }
-        if (features.HasRepeatedCriticalFailure7Days && finalScore < 80m)
+        if (features.HasRepeatedCriticalFailure7Days)
         {
-            finalScore = 80m;
-            overrides.Add("Son 7 günde kritik arıza tekrarlandı; nihai skor en az 80 yapıldı.");
+            overrides.Add("Son 7 günde kritik arıza tekrarlandı; nihai skor kritik banda oransal olarak yükseltildi.");
         }
 
         return new HybridRiskCalculation(
@@ -69,5 +73,14 @@ public sealed class HybridRiskService(IOptions<HybridRiskOptions> options) : IHy
                 ["ruleContribution"] = boundedRule * ruleWeight
             },
             calculatedAt);
+    }
+
+    private static decimal ElevateIntoRiskBand(decimal score, decimal bandMinimum)
+    {
+        // Sabit 60/80 ataması farklı ham skorları tek değerde topluyordu. Ham
+        // skorun oranını bandın kalan kısmına taşıyarak eşik korunurken 80-100
+        // aralığındaki ayrım da korunur.
+        var elevated = bandMinimum + (100m - bandMinimum) * score / 100m;
+        return Math.Clamp(elevated, bandMinimum, 100m);
     }
 }

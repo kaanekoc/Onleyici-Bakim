@@ -52,13 +52,29 @@ public sealed class HybridRiskServiceTests
     }
 
     [Fact]
-    public void CriticalTelemetry_OverridesFinalScoreToAtLeastEighty()
+    public void CriticalTelemetry_ElevatesScoreAboveEightyWithoutFlattening()
     {
         var features = CompleteFeatures();
         features.HasCriticalTelemetry = true;
         var result = _service.Calculate(10m, 10m, features, DateTimeOffset.UtcNow);
-        Assert.Equal(80m, result.FinalRiskScore);
+        Assert.Equal(82m, result.FinalRiskScore);
+        Assert.True(result.FinalRiskScore > 80m);
         Assert.Contains(result.AppliedOverrides, item => item.Contains("telemetri"));
+    }
+
+    [Fact]
+    public void CriticalTelemetry_PreservesRelativeScoreInsideCriticalBand()
+    {
+        var features = CompleteFeatures();
+        features.HasCriticalTelemetry = true;
+
+        var low = _service.Calculate(10m, 10m, features, DateTimeOffset.UtcNow);
+        var medium = _service.Calculate(50m, 50m, features, DateTimeOffset.UtcNow);
+        var high = _service.Calculate(90m, 90m, features, DateTimeOffset.UtcNow);
+
+        Assert.Equal(82m, low.FinalRiskScore);
+        Assert.Equal(90m, medium.FinalRiskScore);
+        Assert.Equal(98m, high.FinalRiskScore);
     }
 
     private static MachineFeatureDto CompleteFeatures() => new()

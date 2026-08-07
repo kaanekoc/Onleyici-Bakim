@@ -98,6 +98,11 @@ public sealed class LocalWorkflowServiceTests
         var maintenance = await db.BakimKayitlari.SingleAsync();
         Assert.Equal("P-1", maintenance.PlanId);
         Assert.Equal(200, maintenance.BakimNedeni?.Length);
+
+        request.StartedAt = DateTime.Now.AddMinutes(-30);
+        request.EndedAt = DateTime.Now;
+        await service.CompleteMaintenanceAsync(request, CancellationToken.None);
+        Assert.Equal(2, await db.BakimKayitlari.CountAsync(x => x.PlanId == "P-1"));
     }
 
     private static MeterReadingRequest Meter() => new() { MachineId = "M-1", CounterDefinitionId = 1, ShiftId = 1, Date = DateOnly.FromDateTime(DateTime.Today), StartValue = 10, EndValue = 45, WorkingMinutes = 400 };

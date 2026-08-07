@@ -64,7 +64,7 @@
 
                         @if (Model.Module == "maintenance-execution")
                         {
-                            <div class="col-md-8"><label asp-for="PlanId" class="form-label">Bakım Planı</label><select asp-for="PlanId" class="form-select"><option value="">Seçiniz</option>@foreach (var x in Model.Plans.Where(x => x.Status != "Tamamlandı" && x.Status != "İptal")) { <option value="@x.Id">@x.PlannedDate:d — @x.MachineName — @x.Type</option> }</select></div>
+                            <div class="col-md-8"><label asp-for="PlanId" class="form-label">Bakım Planı</label><select asp-for="PlanId" class="form-select"><option value="">Seçiniz</option>@foreach (var x in Model.Plans.Where(x => x.Status != "İptal")) { <option value="@x.Id">@x.PlannedDate:d — @x.MachineName — @x.Type (@x.Status)</option> }</select></div>
                             <div class="col-md-4"><label asp-for="ChecklistId" class="form-label">Kontrol Listesi</label><select asp-for="ChecklistId" class="form-select" data-checklist-select><option value="">Kontrol listesi yok</option>@foreach (var x in Model.ChecklistDefinitions) { <option value="@x.Id">@x.Code — @x.Name</option> }</select></div>
                             <div class="col-md-6"><label asp-for="Status" class="form-label">Bakım Sonrası Makine Durumu</label><select asp-for="Status" class="form-select"><option value="Aktif">Aktif</option><option value="İzlemede">İzlemede</option><option value="Bakımda">Bakımda</option><option value="Pasif">Pasif</option></select></div>
                             <div class="col-md-6"><label asp-for="Cost" class="form-label">Maliyet (TL)</label><input asp-for="Cost" class="form-control" min="0" step=".01" /></div>
