@@ -24,7 +24,6 @@ public sealed class OperationsController(
         ["risk-analysis"] = ("Hibrit Risk Analizi", "Sistem tarafından üretilen analizler salt okunur gösterilir; normal akış otomatiktir.", null),
         ["decisions"] = ("Karar Geçmişi", "Sistem önerileri ve kullanıcı kararlarının salt okunur geçmişi.", null),
         ["maintenance-history"] = ("Bakım Geçmişi", "Gerçekleşen bakım kayıtları ve bağlı planlar.", null),
-        ["maintenance-calendar"] = ("Bakım Takvimi", "PlanlananTarih üzerinden bakım planları.", null),
         ["failure-reporting"] = ("Arıza Analizi", "Gerçek arıza kayıtlarından üretilen rapor.", null),
         ["maintenance-reporting"] = ("Bakım Performansı", "Planlanan ve gerçekleşen bakım ilişkisine dayalı rapor.", null),
         ["model-comparison"] = ("Model ve Kural Karşılaştırma", "Kural, AI ve nihai hibrit skor karşılaştırması.", null)

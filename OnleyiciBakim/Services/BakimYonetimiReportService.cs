@@ -17,8 +17,19 @@ public sealed class BakimYonetimiReportService(BakimYonetimiDbContext db) : IRep
             Intervention = g.Average(x => (decimal?)x.MudahaleSuresiDk) ?? 0,
             Cost = g.Sum(x => x.TahminiMaliyetTl) ?? 0
         }).FirstOrDefaultAsync(token);
-        var byType = await query.GroupBy(x => x.ArizaTuru ?? "Tanımsız").Select(g => new CategoryCount(g.Key, g.Count())).OrderByDescending(x => x.Count).ToListAsync(token);
-        var bySeverity = await query.GroupBy(x => x.OnemSeviyesi ?? "Tanımsız").Select(g => new CategoryCount(g.Key, g.Count())).OrderByDescending(x => x.Count).ToListAsync(token);
+        // SQL Server sağlayıcısı positional record kurucusundan sonra Count alanına
+        // göre sıralamayı çeviremiyor. Önce çevrilebilir anonim sonucu al, ardından
+        // API sözleşmesine bellekte dönüştür.
+        var byTypeRows = await query.GroupBy(x => x.ArizaTuru ?? "Tanımsız")
+            .Select(g => new { Category = g.Key, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync(token);
+        var bySeverityRows = await query.GroupBy(x => x.OnemSeviyesi ?? "Tanımsız")
+            .Select(g => new { Category = g.Key, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync(token);
+        var byType = byTypeRows.Select(x => new CategoryCount(x.Category, x.Count)).ToArray();
+        var bySeverity = bySeverityRows.Select(x => new CategoryCount(x.Category, x.Count)).ToArray();
         return new(from, to, summary?.Count ?? 0, Math.Round((summary?.Downtime ?? 0) / 60m, 2), Math.Round(summary?.Intervention ?? 0, 2), summary?.Cost ?? 0, byType, bySeverity);
     }
 

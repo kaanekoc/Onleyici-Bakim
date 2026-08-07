@@ -47,7 +47,10 @@ public sealed class ReportsController(IReportService reportService) : Controller
         DateTimeOffset? to)
     {
         var end = to?.ToUniversalTime() ?? DateTimeOffset.UtcNow;
-        var start = from?.ToUniversalTime() ?? end.AddMonths(-6);
+        // Rapor ekranında tarih filtresi yoktur; varsayılan olarak yalnızca son altı
+        // ayı almak eski fakat geçerli bakım/arızaları görünmez ve metrikleri sıfır
+        // gösteriyordu. Tarih verilmediğinde tüm operasyon geçmişini kapsa.
+        var start = from?.ToUniversalTime() ?? DateTimeOffset.UnixEpoch;
         if (start > end)
             throw new DomainValidationException("'from' tarihi 'to' tarihinden sonra olamaz.");
         return (start, end);

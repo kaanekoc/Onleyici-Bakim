@@ -90,12 +90,14 @@ public sealed class LocalWorkflowServiceTests
     [Fact]
     public async Task Maintenance_RequiresAllMandatoryChecklistItemsAndLinksPlan()
     {
-        await using var db = Context(); Seed(db); var list = new BakimKontrolListeleri { KontrolListesiKodu = "L", KontrolListesiAdi = "Liste", Aktif = true, OlusturmaTarihi = DateTime.UtcNow }; list.KontrolListesiMaddeleri.Add(new KontrolListesiMaddeleri { SiraNo = 1, KontrolMaddesi = "Yağı kontrol et", Zorunlu = true, Aktif = true }); db.Add(list); db.BakimPlanlari.Add(new BakimPlanlari { PlanId = "P-1", MakineId = "M-1", PlanlananTarih = DateTime.Today, TahminiSureDk = 10, Durum = "Planlandı", OlusturmaTarihi = DateTime.UtcNow }); await db.SaveChangesAsync(); var service = new LocalWorkflowService(db);
+        await using var db = Context(); Seed(db); var list = new BakimKontrolListeleri { KontrolListesiKodu = "L", KontrolListesiAdi = "Liste", Aktif = true, OlusturmaTarihi = DateTime.UtcNow }; list.KontrolListesiMaddeleri.Add(new KontrolListesiMaddeleri { SiraNo = 1, KontrolMaddesi = "Yağı kontrol et", Zorunlu = true, Aktif = true }); db.Add(list); db.BakimPlanlari.Add(new BakimPlanlari { PlanId = "P-1", MakineId = "M-1", PlanlananTarih = DateTime.Today, TahminiSureDk = 10, Durum = "Planlandı", Gerekce = new string('R', 350), OlusturmaTarihi = DateTime.UtcNow }); await db.SaveChangesAsync(); var service = new LocalWorkflowService(db);
         var request = new MaintenanceExecutionRequest { PlanId = "P-1", StartedAt = DateTime.Now.AddHours(-1), EndedAt = DateTime.Now, ChecklistId = list.KontrolListesiId };
         await Assert.ThrowsAsync<DomainValidationException>(() => service.CompleteMaintenanceAsync(request, CancellationToken.None));
         request.ChecklistResults.Add(new ChecklistResultRequest { ItemId = list.KontrolListesiMaddeleri.Single().MaddeId, Result = "Uygun" });
         await service.CompleteMaintenanceAsync(request, CancellationToken.None);
-        Assert.Equal("P-1", (await db.BakimKayitlari.SingleAsync()).PlanId);
+        var maintenance = await db.BakimKayitlari.SingleAsync();
+        Assert.Equal("P-1", maintenance.PlanId);
+        Assert.Equal(200, maintenance.BakimNedeni?.Length);
     }
 
     private static MeterReadingRequest Meter() => new() { MachineId = "M-1", CounterDefinitionId = 1, ShiftId = 1, Date = DateOnly.FromDateTime(DateTime.Today), StartValue = 10, EndValue = 45, WorkingMinutes = 400 };

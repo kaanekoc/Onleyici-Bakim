@@ -65,7 +65,7 @@ public sealed class FailureInterventionRequest
     public string? PersonnelId { get; set; }
     [Required] public string Action { get; set; } = string.Empty;
     public string? RootCause { get; set; }
-    public string? Result { get; set; }
+    [StringLength(200)] public string? Result { get; set; }
     [Range(0, int.MaxValue)] public int? ActualDowntimeMinutes { get; set; }
     public string? Description { get; set; }
     public List<ChangedPartRequest> Parts { get; set; } = [];
@@ -109,7 +109,7 @@ public sealed class ChecklistResultRequest
 {
     public int ItemId { get; set; }
     public string? Result { get; set; }
-    public string? Description { get; set; }
+    [StringLength(500)] public string? Description { get; set; }
 }
 
 public sealed class WorkOrderRequest

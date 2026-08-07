@@ -304,6 +304,16 @@ a { text-decoration: none; color: inherit; }
 .app-modal { border: 0; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); overflow: hidden; }
 .app-modal .modal-header, .app-modal .modal-footer { border-color: var(--border); padding: 16px 20px; }
 .app-modal .modal-body { padding: 20px; }
+.modal-dialog-scrollable .operation-modal-form {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 3.5rem);
+  overflow: hidden;
+}
+.modal-dialog-scrollable .operation-modal-form .modal-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .modal-loading { position: fixed; inset: 0; z-index: 1060; display: grid; place-items: center; background: rgba(11, 18, 32, .28); }
 .source-badge { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 4px 9px; font-size: .72rem; font-weight: 700; }
 .source-erp { color: #1d4ed8; background: #dbeafe; }

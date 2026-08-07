@@ -287,6 +287,89 @@ public sealed class BakimYonetimiDataController(
             items, request.Page, request.PageSize, total));
     }
 
+    [HttpGet("predictive/risk-analyses")]
+    public async Task<IActionResult> GetPredictiveRiskAnalyses(
+        [FromQuery] int take = 100,
+        CancellationToken cancellationToken = default)
+    {
+        take = Math.Clamp(take, 1, 500);
+        var items = await dbContext.RiskAnalizleri.AsNoTracking()
+            .OrderByDescending(x => x.AnalizTarihi)
+            .Take(take)
+            .Select(x => new
+            {
+                x.AnalizId,
+                x.AnalizTarihi,
+                x.MakineId,
+                MachineName = x.Makine.MakineAdi,
+                x.KuralPuani,
+                x.AiRiskSkoru,
+                x.NihaiPuan,
+                x.RiskSeviyesi,
+                x.VeriYeterliligi,
+                x.VeriTamlikOrani,
+                x.ModelVersiyonu,
+                x.HesaplamaNedeni
+            })
+            .ToListAsync(cancellationToken);
+        return Ok(items);
+    }
+
+    [HttpGet("predictive/warnings")]
+    public async Task<IActionResult> GetPredictiveWarnings(
+        [FromQuery] int take = 100,
+        CancellationToken cancellationToken = default)
+    {
+        take = Math.Clamp(take, 1, 500);
+        var items = await dbContext.Uyarilar.AsNoTracking()
+            .OrderByDescending(x => x.OlusturmaTarihi)
+            .Take(take)
+            .Select(x => new
+            {
+                x.UyariId,
+                x.OlusturmaTarihi,
+                x.MakineId,
+                MachineName = x.Makine.MakineAdi,
+                x.UyariSeviyesi,
+                x.Baslik,
+                x.OnerilenAksiyon,
+                x.Durum,
+                x.SonTarih,
+                ResponsiblePersonnel = x.SorumluPersonel != null
+                    ? x.SorumluPersonel.AdSoyad
+                    : null
+            })
+            .ToListAsync(cancellationToken);
+        return Ok(items);
+    }
+
+    [HttpGet("predictive/decisions")]
+    public async Task<IActionResult> GetPredictiveDecisions(
+        [FromQuery] int take = 100,
+        CancellationToken cancellationToken = default)
+    {
+        take = Math.Clamp(take, 1, 500);
+        var items = await dbContext.KararGecmisi.AsNoTracking()
+            .OrderByDescending(x => x.KararTarihi)
+            .Take(take)
+            .Select(x => new
+            {
+                x.KararId,
+                x.KararTarihi,
+                x.MakineId,
+                MachineName = x.Makine.MakineAdi,
+                x.SistemOnerisi,
+                x.KullaniciKarari,
+                x.Uyumlu,
+                x.DegisiklikGerekcesi,
+                DecisionPersonnel = x.KararVerenPersonel != null
+                    ? x.KararVerenPersonel.AdSoyad
+                    : null
+            })
+            .ToListAsync(cancellationToken);
+        return Ok(items);
+    }
+
     private RiskPresentation PresentRisk(decimal score)
     {
         var level = classificationService.Classify(score);
