@@ -19,48 +19,41 @@ HTTP örnekleri: [OnleyiciBakim.http](OnleyiciBakim.http)
 
 ## Hızlı başlangıç
 
-Her şema güncellemesinden önce SQL Server yedeği alın. Bu teslimde doğrulanmış geri dönüş
-noktası `C:\Users\Kaan\Downloads\BakimYonetimiDb_before_20260805.bak` dosyasıdır.
-İlk kurulumda gönderilen en güncel yedeği LocalDB'ye geri yükleyin:
+Gereksinimler: Windows, .NET 8 SDK veya daha yenisi, Python 3.11, SQL Server LocalDB,
+`sqlcmd` ve Git. `BakimYonetimiDb_before_20260805.bak` dosyası kişisel/veritabanı verisi
+içerdiği için depoya eklenmez; ilk kurulumdan önce bu yedeği `Downloads` klasörüne koyun.
+Sonra depoyu indirip geliştirme sürümünü başlatın:
 
 ```powershell
-.\scripts\Restore-BakimYonetimiDb.ps1
+git clone https://github.com/kaanekoc/Onleyici-Bakim.git; Set-Location .\Onleyici-Bakim; .\scripts\Start-Local.ps1
 ```
 
-Betik mevcut bir `BakimYonetimiDb` üzerine yazmaz. Bilinçli yenileme gerekiyorsa `-Replace`
-kullanılabilir. Yedeğin ardından idempotent tamamlama scriptini uygulayın; script veritabanı
-veya iş tablosu silmez ve tekrar çalıştırılabilir:
+Betik ilk açılışta veritabanını yedekten kurar ve tamamlama SQL'ini uygular; sonraki
+çalıştırmalarda mevcut veritabanını kullanır. Python ML paketlerini kurar ve backend,
+ML servisi ile web arayüzünü ayrı pencerelerde başlatır. Arayüz `http://localhost:5080`,
+Swagger `http://localhost:5224/swagger` adresindedir. Pencereleri kapatarak servisleri
+durdurabilirsiniz. Yedek başka konumdaysa `Start-Local.ps1 -BackupPath "C:\yedek\BakimYonetimiDb.bak"`
+şeklinde çalıştırın.
+
+Gerçek `BakimYonetimiDb` verisiyle çalışmak için önce aşağıdaki SQL Server kurulumunu tamamlayın.
+
+### Gerçek SQL Server verisiyle çalıştırma
+
+SQL Server LocalDB ve `sqlcmd` kurulu olmalıdır. `BakimYonetimiDb_before_20260805.bak`
+yedeğini GitHub deposundan ayrı olarak `Downloads` klasörüne koyun, ardından depo kökünde:
 
 ```powershell
-sqlcmd -S "(localdb)\MSSQLLocalDB" -d BakimYonetimiDb -E -b -f 65001 `
-  -i .\scripts\20260805_PreventiveMaintenanceCompletion.sql
+.\scripts\Restore-BakimYonetimiDb.ps1 -BackupPath "$env:USERPROFILE\Downloads\BakimYonetimiDb_before_20260805.bak"
+sqlcmd -S "(localdb)\MSSQLLocalDB" -d BakimYonetimiDb -E -b -f 65001 -i .\scripts\20260805_PreventiveMaintenanceCompletion.sql
 ```
 
-SQL betiği daha önce `-f 65001` olmadan çalıştırıldıysa Türkçe metinleri ve bu metinleri
-kullanan veritabanı nesnelerini bir kez onarın:
+Türkçe metin onarımı yalnızca tamamlama betiği daha önce `-f 65001` olmadan çalıştırıldıysa gerekir:
 
 ```powershell
-sqlcmd -S "(localdb)\MSSQLLocalDB" -d BakimYonetimiDb -E -b -f 65001 `
-  -i .\scripts\20260806_RepairTurkishText.sql
+sqlcmd -S "(localdb)\MSSQLLocalDB" -d BakimYonetimiDb -E -b -f 65001 -i .\scripts\20260806_RepairTurkishText.sql
 ```
 
-Ardından Development profili yerel SQL Server ve gerçek yerel ML HTTP servisini kullanır:
-
-```powershell
-dotnet restore .\OnleyiciBakim.sln
-dotnet build .\OnleyiciBakim.sln
-dotnet test .\OnleyiciBakim.sln
-dotnet run --project .\OnleyiciBakim\OnleyiciBakim.csproj
-```
-
-ML servisini ayrı terminalde başlatın:
-
-```powershell
-cd .\MlService
-py -3.11 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe .\app.py
-```
+Ardından `scripts\Start-Local.ps1` betiği mevcut veritabanını algılar ve uygulamayı başlatır.
 
 ML ayrıntıları ve güncel model metrikleri: [MlService/README.md](MlService/README.md)
 
@@ -70,12 +63,6 @@ Backend:
 - Swagger: `http://localhost:5224/swagger`
 - Development test paneli: `http://localhost:5224/dev-test`
 - Health: `http://localhost:5224/health`, `/health/live`, `/health/ready`
-
-Frontend'i ayrı terminalde başlatın:
-
-```powershell
-dotnet run --project .\Frontend\OnleyiciBakimSistemi.csproj
-```
 
 Frontend: `http://localhost:5080`
 
